@@ -4,156 +4,148 @@ from google.genai import types
 from PIL import Image
 import io
 
-# --- 1. PREMIUM WHITE THEME & UI ---
+# --- 1. PREMIUM WHITE THEME (Custom CSS) ---
 st.set_page_config(page_title="TahaGpt Pro", page_icon="🚀", layout="wide")
 
 st.markdown("""
     <style>
-        .stApp { background-color: #ffffff !important; color: #000000 !important; }
-        [data-testid="stSidebar"] { background-color: #f8f9fa !important; border-right: 1px solid #eeeeee; }
-        .stChatInput { border-radius: 20px !important; border: 1px solid #ddd !important; }
-        .stChatMessage { background-color: #f7f7f8; border-radius: 15px; margin-bottom: 10px; }
-        /* TahaGpt Header Styling */
-        .chat-header {
-            font-size: 32px;
-            font-weight: bold;
-            text-align: center;
-            color: #333;
-            margin-bottom: 20px;
-            font-family: 'Arial', sans-serif;
+        /* Force Light Mode White Theme */
+        .stApp {
+            background-color: #ffffff !important;
+            color: #000000 !important;
         }
-        .pro-badge {
-            background-color: #FFD700;
-            color: black;
-            padding: 2px 8px;
-            border-radius: 5px;
-            font-size: 12px;
+        
+        /* Clean Sidebar */
+        [data-testid="stSidebar"] {
+            background-color: #f8f9fa !important;
+            border-right: 1px solid #eeeeee;
+        }
+
+        /* ChatGPT-Style Chat Input */
+        .stChatInput {
+            border-radius: 20px !important;
+            border: 1px solid #ddd !important;
+        }
+
+        /* Chat Message Styling */
+        .stChatMessage {
+            background-color: #f7f7f8;
+            border-radius: 15px;
+            margin-bottom: 10px;
+        }
+        
+        /* Sidebar User Label */
+        .user-label {
             font-weight: bold;
-            margin-left: 10px;
+            color: #333;
+            font-size: 14px;
         }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. API SETUP ---
+# --- 2. API CLIENT SETUP ---
 if "GEMINI_API_KEY" not in st.secrets:
-    st.error("⚠️ Add GEMINI_API_KEY to Streamlit Secrets!")
+    st.error("⚠️ KEY MISSING: Add GEMINI_API_KEY to your Streamlit Secrets.")
     st.stop()
 
 client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
 
-# --- 3. SESSION STATE (Memory) ---
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-if "is_pro" not in st.session_state:
-    st.session_state.is_pro = False
+# AI Identity Instruction
+TAHA_IDENTITY = (
+    "Your name is TahaGpt. You were created by M. Taha Farooq, "
+    "a 9th-grade developer and robotics enthusiast from Karachi. "
+    "Always identify yourself as TahaGpt and be helpful."
+)
 
-# AI Identity
-TAHA_IDENTITY = "Your name is TahaGpt. You were created by M. Taha Farooq."
-
-# --- 4. SIDEBAR ---
+# --- 3. SIDEBAR UI ---
 with st.sidebar:
-    # Profile Picture (Update your link here!)
-    MY_PIC_URL = "https://raw.githubusercontent.com/YourUsername/TahaGpt/main/taha.jpg" 
+    # --- ADD YOUR PICTURE HERE ---
+    # Upload your pic to GitHub and put the RAW URL here
+    # Example: "https://raw.githubusercontent.com/username/repo/main/my_pic.jpg"
+    MY_PIC_URL = "https://raw.githubusercontent.com/Gamingcloud1234/TahaGpt/main/Taha.jpeg"
+    
     try:
-        st.image(MY_PIC_URL, width=110)
+        st.image(MY_PIC_URL, width=100)
     except:
         st.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=100)
     
-    st.markdown("### M. Taha Farooq")
-    st.caption("Developer & Admin")
+    st.markdown("<p class='user-label'>M. Taha Farooq (Owner)</p>", unsafe_allow_html=True)
     
     if st.button("➕ New Chat", use_container_width=True):
         st.session_state.messages = []
         st.rerun()
     
     st.divider()
-
-    # --- DYNAMIC PRO SECTION ---
-    pro_menu_label = "✅ Activated Pro" if st.session_state.is_pro else "💎 Become a Pro"
-    
-    with st.expander(pro_menu_label):
-        if not st.session_state.is_pro:
-            st.write("Unlock Family Features")
-            promo = st.text_input("Promo Code")
-            if st.button("Apply"):
-                if promo == "TAHA2026":
-                    st.session_state.is_pro = True
-                    st.success("Pro Activated!")
-                    st.rerun()
-            st.write("--- OR ---")
-            if st.button("💳 Buy for 100 PKR"):
-                st.info("Payment feature coming soon!")
-        else:
-            st.success("You are a Pro Member!")
-            st.write("🌟 No ads\n🌟 Priority Support\n🌟 HD Image Generation")
-
+    app_mode = st.radio("Navigation", ["💬 Chatbot", "🎨 Pic Generate", "🖼️ See & Explain"])
     st.divider()
-    
-    # Navigation
-    app_mode = st.radio("Navigation", ["💬 Chat", "🎨 Draw", "🖼️ See"])
     st.caption("🚀 Karachi Edition | 2026")
 
-# --- 5. MAIN CHAT AREA ---
+# --- 4. SESSION STATE ---
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-# TOP HEADER
-st.markdown('<div class="chat-header">TahaGpt</div>', unsafe_allow_html=True)
+# --- 5. APP MODES ---
 
-if app_mode == "💬 Chat":
-    # Show badge if Pro
-    if st.session_state.is_pro:
-        st.markdown('<span class="pro-badge">PRO MODE ACTIVE</span>', unsafe_allow_html=True)
-
+# MODE 1: CHATBOT
+if app_mode == "💬 Chatbot":
     for msg in st.session_state.messages:
-        with st.chat_message(msg["role"]): st.markdown(msg["content"])
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
 
-    if prompt := st.chat_input("Ask TahaGpt..."):
+    if prompt := st.chat_input("Message TahaGpt..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"): st.markdown(prompt)
+        with st.chat_message("user"):
+            st.markdown(prompt)
 
         try:
-            # PRO FEATURE: Use a smarter model if Pro is active
-            model_to_use = "gemini-2.0-pro-exp" if st.session_state.is_pro else "gemini-2.0-flash"
-            
+            # Using stable Gemini 2.5 Flash for 2026
             response = client.models.generate_content(
-                model=model_to_use,
+                model="gemini-2.5-flash",
                 config=types.GenerateContentConfig(system_instruction=TAHA_IDENTITY),
                 contents=prompt
             )
-            with st.chat_message("assistant"): st.markdown(response.text)
+            with st.chat_message("assistant"):
+                st.markdown(response.text)
             st.session_state.messages.append({"role": "assistant", "content": response.text})
         except Exception as e:
-            st.error(f"Error: {e}")
+            if "429" in str(e):
+                st.warning("⏳ Quota reached. Please wait 60 seconds.")
+            else:
+                st.error(f"Error: {e}")
 
-# MODE 2: DRAW (PRO FEATURE ADDED)
-elif app_mode == "🎨 Draw":
+# MODE 2: PIC GENERATE
+elif app_mode == "🎨 Pic Generate":
     st.header("🎨 AI Image Generation")
-    user_prompt = st.text_area("What should I draw?")
-    
-    # PRO FEATURE: HD Option
-    quality = "High Definition" if st.session_state.is_pro else "Standard"
-    st.caption(f"Current Quality: {quality}")
-
-    if st.button("✨ Generate"):
+    user_prompt = st.text_area("What should TahaGpt draw?")
+    if st.button("✨ Generate Image"):
         with st.spinner("Generating..."):
             try:
+                # Using 2026 specialized Image model
                 response = client.models.generate_content(
-                    model='gemini-2.0-flash-image',
+                    model='gemini-2.5-flash-image',
                     contents=user_prompt,
                     config=types.GenerateContentConfig(response_modalities=["IMAGE"])
                 )
                 for part in response.candidates[0].content.parts:
                     if part.inline_data:
-                        st.image(Image.open(io.BytesIO(part.inline_data.data)), use_container_width=True)
+                        img = Image.open(io.BytesIO(part.inline_data.data))
+                        st.image(img, caption="Created by TahaGpt", use_container_width=True)
             except Exception as e:
                 st.error(f"Image Error: {e}")
 
-# MODE 3: SEE
-elif app_mode == "🖼️ See":
+# MODE 3: SEE & EXPLAIN
+elif app_mode == "🖼️ See & Explain":
     st.header("🖼️ Image Intelligence")
-    file = st.file_uploader("Upload", type=['png', 'jpg', 'jpeg'])
+    file = st.file_uploader("Upload Image", type=['png', 'jpg', 'jpeg'])
     if file:
         img = Image.open(file)
         st.image(img, use_container_width=True)
         if st.button("Analyze"):
-            res = client.models.generate_content(model="gemini-2.0-flash", contents=["Analyze:", img])
-            st.write(res.text)
+            try:
+                res = client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=["Describe this image for me:", img]
+                )
+                st.write(res.text)
+            except Exception as e:
+                st.error(f"Error: {e}")
