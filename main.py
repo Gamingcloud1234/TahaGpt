@@ -40,28 +40,50 @@ st.markdown("""
             color: #333;
             font-size: 14px;
         }
+
+        /* TahaGpt Golden Pro Bar */
+        .pro-header {
+            background: linear-gradient(90deg, #FFD700, #FFEC8B);
+            color: #000000;
+            padding: 10px;
+            border-radius: 10px;
+            text-align: center;
+            font-weight: bold;
+            font-size: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0px 4px 10px rgba(0,0,0,0.1);
+        }
+        /* Normal Header */
+        .normal-header {
+            text-align: center;
+            font-size: 32px;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. API CLIENT SETUP ---
+# --- 2. SESSION STATE (For Pro Activation) ---
+if "is_pro" not in st.session_state:
+    st.session_state.is_pro = False
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+# --- 3. API CLIENT SETUP ---
 if "GEMINI_API_KEY" not in st.secrets:
     st.error("⚠️ KEY MISSING: Add GEMINI_API_KEY to your Streamlit Secrets.")
     st.stop()
 
 client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
 
-# AI Identity Instruction
 TAHA_IDENTITY = (
     "Your name is TahaGpt. You were created by M. Taha Farooq, "
     "a 9th-grade developer and robotics enthusiast from Karachi. "
     "Always identify yourself as TahaGpt and be helpful."
 )
 
-# --- 3. SIDEBAR UI ---
+# --- 4. SIDEBAR UI ---
 with st.sidebar:
-    # --- ADD YOUR PICTURE HERE ---
-    # Upload your pic to GitHub and put the RAW URL here
-    # Example: "https://raw.githubusercontent.com/username/repo/main/my_pic.jpg"
     MY_PIC_URL = "https://raw.githubusercontent.com/Gamingcloud1234/TahaGpt/main/Taha.jpeg"
     
     try:
@@ -76,15 +98,39 @@ with st.sidebar:
         st.rerun()
     
     st.divider()
+
+    # --- PRO UPGRADE SECTION ---
+    pro_label = "✅ Pro Mode Activated" if st.session_state.is_pro else "💎 Become a Pro"
+    with st.expander(pro_label):
+        if not st.session_state.is_pro:
+            promo = st.text_input("Enter Promo Code", placeholder="Family Code...")
+            if st.button("Apply Code", use_container_width=True):
+                if promo == "TAHA2026": # You can change this code
+                    st.session_state.is_pro = True
+                    st.success("Pro Activated!")
+                    st.rerun()
+                else:
+                    st.error("Invalid Code")
+            
+            st.markdown("<p style='text-align: center;'>OR</p>", unsafe_allow_html=True)
+            
+            if st.button("💳 Buy for 100 Rupees", use_container_width=True):
+                st.info("Payment system coming soon!")
+        else:
+            st.write("Welcome to the Family Pro experience!")
+
+    st.divider()
     app_mode = st.radio("Navigation", ["💬 Chatbot", "🎨 Pic Generate", "🖼️ See & Explain"])
     st.divider()
     st.caption("🚀 Karachi Edition | 2026")
 
-# --- 4. SESSION STATE ---
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+# --- 5. APP TOP HEADER ---
+if st.session_state.is_pro:
+    st.markdown('<div class="pro-header">✨ TahaGpt Pro Mode Activated ✨</div>', unsafe_allow_html=True)
+else:
+    st.markdown('<div class="normal-header">TahaGpt</div>', unsafe_allow_html=True)
 
-# --- 5. APP MODES ---
+# --- 6. APP MODES ---
 
 # MODE 1: CHATBOT
 if app_mode == "💬 Chatbot":
@@ -98,7 +144,6 @@ if app_mode == "💬 Chatbot":
             st.markdown(prompt)
 
         try:
-            # Using stable Gemini 2.5 Flash for 2026
             response = client.models.generate_content(
                 model="gemini-2.5-flash",
                 config=types.GenerateContentConfig(system_instruction=TAHA_IDENTITY),
@@ -120,7 +165,6 @@ elif app_mode == "🎨 Pic Generate":
     if st.button("✨ Generate Image"):
         with st.spinner("Generating..."):
             try:
-                # Using 2026 specialized Image model
                 response = client.models.generate_content(
                     model='gemini-2.5-flash-image',
                     contents=user_prompt,
