@@ -14,7 +14,7 @@ st.markdown("""
         .stChatInput { border-radius: 20px !important; border: 1px solid #ddd !important; }
         .stChatMessage { background-color: #f7f7f8; border-radius: 15px; margin-bottom: 10px; }
         
-        /* SLEEK GOLDEN BAR (Reduced Size) */
+        /* SLEEK GOLDEN BAR */
         .pro-header {
             background: linear-gradient(90deg, #FFD700, #FFFACD);
             color: #000;
@@ -32,6 +32,12 @@ st.markdown("""
             font-weight: bold;
             margin-bottom: 15px;
         }
+        /* Pro Item Text */
+        .pro-item-text {
+            color: #B8860B;
+            font-weight: bold;
+            font-size: 14px;
+        }
     </style>
     """, unsafe_allow_html=True)
 
@@ -47,7 +53,6 @@ if "GEMINI_API_KEY" not in st.secrets:
     st.stop()
 
 client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
-
 TAHA_IDENTITY = "Your name is TahaGpt. You were created by M. Taha Farooq."
 
 # --- 4. SIDEBAR UI ---
@@ -66,7 +71,7 @@ with st.sidebar:
     
     st.divider()
 
-    # --- PRO SECTION ---
+    # --- PRO UPGRADE SECTION ---
     if not st.session_state.is_pro:
         with st.expander("💎 Become a Pro"):
             promo = st.text_input("Promo Code", placeholder="Enter code...")
@@ -76,18 +81,23 @@ with st.sidebar:
                     st.rerun()
                 else:
                     st.error("Wrong Code")
-            st.divider()
-            if st.button("💳 Buy Pro (100 PKR)", use_container_width=True):
-                st.info("Payment feature coming soon!")
     else:
-        # REMOVE PRO OPTION
         st.success("✅ Pro Active")
+        
+        # --- NEW: PRO ITEMS LIST ---
+        st.markdown("<p class='pro-item-text'>💎 Pro Items</p>", unsafe_allow_html=True)
+        if st.button("📄 Create a PDF", use_container_width=True):
+            st.info("Pro Feature: PDF generation starting...")
+        if st.button("💻 Create AI Code", use_container_width=True):
+            st.info("Pro Feature: Coding Assistant ready.")
+            
         if st.button("❌ Remove Pro Mode", use_container_width=True):
             st.session_state.is_pro = False
             st.rerun()
 
     st.divider()
     app_mode = st.radio("Navigation", ["💬 Chatbot", "🎨 Pic Generate", "🖼️ See & Explain"])
+    st.divider()
     st.caption("🚀 Karachi Edition | 2026")
 
 # --- 5. TOP HEADER ---
