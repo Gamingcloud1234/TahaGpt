@@ -1,82 +1,64 @@
 import streamlit as st
 import google.generativeai as genai
 from PIL import Image
-import io
 
-# --- PAGE SETUP ---
-st.set_page_config(page_title="TahaGpt Super App", page_icon="🚀", layout="wide")
+# --- PAGE CONFIG ---
+st.set_page_config(page_title="TahaGpt Super App", page_icon="🚀")
 
-# --- STYLE ---
-st.markdown("""
-    <style>
-    .stButton>button { width: 100%; border-radius: 20px; }
-    .stTextInput>div>div>input { border-radius: 20px; }
-    </style>
-    """, unsafe_allow_html=True)
-
-# --- API SECRETS ---
+# --- API SETUP ---
 try:
+    # Using the secret you just added
     API_KEY = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=API_KEY)
-except:
-    st.error("Add your GEMINI_API_KEY to Streamlit Secrets!")
+    # Fix: Using the most stable model name for 2026
+    model = genai.GenerativeModel('gemini-1.5-flash') 
+except Exception as e:
+    st.error("Check your API Key in Secrets!")
     st.stop()
 
-# --- SIDEBAR (THE "+" ICON) ---
+# --- SIDEBAR (UI) ---
 with st.sidebar:
-    st.title("⚙️ TahaGpt Menu")
+    st.title("🚀 TahaGpt Pro")
     if st.button("➕ New Chat"):
         st.session_state.messages = []
         st.rerun()
     
     st.divider()
-    app_mode = st.radio("Choose Tool:", ["💬 Chatbot", "🖼️ Image Analysis", "📝 PDF/Text Tools"])
-    st.info("Home WiFi Edition - Karachi")
+    # Tool Selection
+    choice = st.radio("Select Tool:", ["💬 Chat", "🖼️ Analyze Image", "📁 PDF Info"])
 
-# --- INITIALIZE CHAT ---
+# --- CHAT LOGIC ---
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# --- MODE 1: CHATBOT ---
-if app_mode == "💬 Chatbot":
-    st.header("💬 AI Conversation")
+if choice == "💬 Chat":
+    st.header("Chat with TahaGpt")
     
-    # Display History
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
 
-    if prompt := st.chat_input("Ask TahaGpt anything..."):
+    if prompt := st.chat_input("How can I help you?"):
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        model = genai.GenerativeModel('gemini-3.1-flash')
+        # Generate Response
         response = model.generate_content(prompt)
-        
+        st.session_state.messages.append({"role": "assistant", "content": response.text})
         with st.chat_message("assistant"):
             st.markdown(response.text)
-        st.session_state.messages.append({"role": "assistant", "content": response.text})
 
-# --- MODE 2: IMAGE ANALYSIS ---
-elif app_mode == "🖼️ Image Analysis":
-    st.header("🖼️ Image Intelligence")
-    uploaded_file = st.file_uploader("Upload a photo to see what's inside", type=['png', 'jpg', 'jpeg'])
-    
-    if uploaded_file:
-        img = Image.open(uploaded_file)
-        st.image(img, caption="Uploaded Image", use_container_width=True)
-        
-        user_ask = st.text_input("What should I do with this image?", "Describe this image in detail")
-        
-        if st.button("Analyze Image"):
-            model = genai.GenerativeModel('gemini-3.1-flash')
-            response = model.generate_content([user_ask, img])
-            st.write("### Analysis:")
-            st.write(response.text)
+elif choice == "🖼️ Analyze Image":
+    st.header("Image AI")
+    file = st.file_uploader("Upload an image", type=["jpg", "png", "jpeg"])
+    if file:
+        img = Image.open(file)
+        st.image(img, use_container_width=True)
+        if st.button("What is this?"):
+            res = model.generate_content(["Describe this image in detail", img])
+            st.write(res.text)
 
-# --- MODE 3: PDF / TEXT ---
-elif app_mode == "📝 PDF/Text Tools":
-    st.header("📝 Document Assistant")
-    st.write("Coming Soon: PDF Text Extraction for your 9th Grade Board notes!")
-    st.warning("Note: Generating actual PDFs requires 'ReportLab' library in requirements.txt")
+elif choice == "📁 PDF Info":
+    st.header("PDF Tools")
+    st.info("Upload your 9th grade notes here soon!")
