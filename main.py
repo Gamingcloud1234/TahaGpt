@@ -4,7 +4,7 @@ from google.genai import types
 from PIL import Image
 import io
 
-# --- 1. CLEAN UI & CSS ---
+# --- 1. CLEAN UI ---
 st.set_page_config(page_title="TahaGpt Pro", page_icon="🚀", layout="wide")
 
 st.markdown("""
@@ -12,15 +12,12 @@ st.markdown("""
         .stApp { background-color: #ffffff !important; color: #000000 !important; }
         [data-testid="stSidebar"] { background-color: #f8f9fa !important; border-right: 1px solid #eeeeee; }
         
-        /* Style the Popover Button to be a circular icon next to chat */
-        div[data-testid="column"] .stPopover button {
-            border-radius: 50% !important;
-            width: 42px !important;
-            height: 42px !important;
+        /* Floating '+' button style */
+        .stPopover button {
+            border-radius: 20px !important;
             background-color: #f0f2f6 !important;
             border: 1px solid #ddd !important;
-            font-size: 20px !important;
-            margin-top: 10px;
+            font-weight: bold;
         }
 
         .stChatInput { border-radius: 20px !important; }
@@ -30,7 +27,7 @@ st.markdown("""
             background: linear-gradient(90deg, #FFD700, #FFFACD);
             color: #000; padding: 6px; border-radius: 8px;
             text-align: center; font-weight: bold; font-size: 15px;
-            margin-bottom: 15px; border: 1px solid #E6B800;
+            margin-bottom: 15px;
         }
         .normal-header { text-align: center; font-size: 28px; font-weight: bold; margin-bottom: 15px; }
     </style>
@@ -68,8 +65,10 @@ def login_page():
 if not st.session_state.logged_in:
     login_page()
 else:
+    # API SETUP
     client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
-    
+    TAHA_IDENTITY = f"Your name is TahaGpt. Created by Taha Farooq for {st.session_state.current_user}."
+
     with st.sidebar:
         st.image("https://raw.githubusercontent.com/Gamingcloud1234/TahaGpt/main/Taha.jpeg", width=100)
         st.markdown(f"**User: {st.session_state.current_user}**")
@@ -99,37 +98,41 @@ else:
 
     # PAGE: CHAT
     if st.session_state.page == "Chat":
-        # 1. Display chat messages FIRST
+        # Chat Messages Area
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]): st.markdown(msg["content"])
 
-        # 2. Bottom Input Bar (Using a stable column container)
-        # This keeps the + button and chat bar together at the bottom
-        with st.container():
-            c1, c2 = st.columns([0.06, 0.94])
-            with c1:
-                with st.popover("＋"):
-                    st.write("📤 **Upload Content**")
-                    st.file_uploader("Device", type=['png', 'jpg', 'pdf'])
-                    st.button("Drive")
-            with c2:
-                if prompt := st.chat_input("Message TahaGpt..."):
-                    st.session_state.messages.append({"role": "user", "content": prompt})
-                    with st.chat_message("user"): st.markdown(prompt)
-                    
-                    res = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
-                    st.session_state.messages.append({"role": "assistant", "content": res.text})
-                    with st.chat_message("assistant"): st.markdown(res.text)
-                    st.rerun()
+        # THE FIX: Bottom Attachment Bar
+        # Ye chat input ke bilkul upar hamesha rahega
+        st.write("") # Spacer
+        with st.popover("➕ Attach Files"):
+            st.write("📤 **Select Source**")
+            st.file_uploader("This Device", type=['png', 'jpg', 'pdf'])
+            st.button("Google Drive")
+            st.button("Web Link")
+
+        # THE INPUT BAR (Pinned by Streamlit naturally)
+        if prompt := st.chat_input("Message TahaGpt..."):
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            with st.chat_message("user"): st.markdown(prompt)
+            
+            try:
+                res = client.models.generate_content(
+                    model="gemini-2.0-flash",
+                    config=types.GenerateContentConfig(system_instruction=TAHA_IDENTITY),
+                    contents=prompt
+                )
+                st.session_state.messages.append({"role": "assistant", "content": res.text})
+                with st.chat_message("assistant"): st.markdown(res.text)
+                st.rerun()
+            except Exception as e: st.error(e)
 
     # PAGE: PDF
     elif st.session_state.page == "PDF_Mode":
         st.header("📄 PDF Assistant")
-        st.write("Pro tool to generate reports.")
-        st.text_area("Enter data...")
+        st.text_area("Content for PDF...")
 
     # PAGE: CODE
     elif st.session_state.page == "Code_Mode":
         st.header("💻 Code Studio")
-        st.write("Pro tool for technical scripts.")
-        st.text_input("Describe your script...")
+        st.text_input("Coding prompt...")
