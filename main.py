@@ -4,32 +4,45 @@ from google.genai import types
 from PIL import Image
 import io
 
-# --- 1. CLEAN UI ---
+# --- 1. PINNED BOTTOM CSS ---
 st.set_page_config(page_title="TahaGpt Pro", page_icon="🚀", layout="wide")
 
 st.markdown("""
     <style>
         .stApp { background-color: #ffffff !important; color: #000000 !important; }
-        [data-testid="stSidebar"] { background-color: #f8f9fa !important; border-right: 1px solid #eeeeee; }
         
-        /* Floating '+' button style */
+        /* PIN THE ENTIRE INPUT SECTION TO THE BOTTOM */
+        [data-testid="stVerticalBlock"] > div:has(div.stChatInput) {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background-color: white;
+            padding: 10px 10% 20px 10%; /* Adjust padding to match wide layout */
+            z-index: 1000;
+            border-top: 1px solid #eeeeee;
+        }
+
+        /* Style the Popover Button */
         .stPopover button {
-            border-radius: 20px !important;
+            border-radius: 50% !important;
+            width: 42px !important;
+            height: 42px !important;
             background-color: #f0f2f6 !important;
             border: 1px solid #ddd !important;
-            font-weight: bold;
+            font-size: 20px !important;
         }
 
         .stChatInput { border-radius: 20px !important; }
-        .stChatMessage { background-color: #f7f7f8; border-radius: 15px; margin-bottom: 10px; }
+        .stChatMessage { margin-bottom: 20px; border-radius: 15px; }
         
+        /* Header Styling */
         .pro-header {
             background: linear-gradient(90deg, #FFD700, #FFFACD);
             color: #000; padding: 6px; border-radius: 8px;
             text-align: center; font-weight: bold; font-size: 15px;
-            margin-bottom: 15px;
         }
-        .normal-header { text-align: center; font-size: 28px; font-weight: bold; margin-bottom: 15px; }
+        .normal-header { text-align: center; font-size: 28px; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -53,86 +66,78 @@ def login_page():
                 st.session_state.logged_in = True
                 st.session_state.current_user = u
                 st.rerun()
-            else: st.error("Wrong details")
+            else: st.error("Access Denied")
     with t2:
         nu = st.text_input("New Username")
         np = st.text_input("New Password", type="password")
-        if st.button("Register", use_container_width=True):
+        if st.button("Create Account", use_container_width=True):
             st.session_state.users[nu] = np
-            st.success("Account Created!")
+            st.success("User Registered!")
 
 # --- 4. MAIN APP ---
 if not st.session_state.logged_in:
     login_page()
 else:
-    # API SETUP
     client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
-    TAHA_IDENTITY = f"Your name is TahaGpt. Created by Taha Farooq for {st.session_state.current_user}."
-
+    
     with st.sidebar:
         st.image("https://raw.githubusercontent.com/Gamingcloud1234/TahaGpt/main/Taha.jpeg", width=100)
-        st.markdown(f"**User: {st.session_state.current_user}**")
+        st.markdown(f"**Dev: {st.session_state.current_user}**")
         if st.button("➕ New Chat", use_container_width=True):
             st.session_state.messages = []
-            st.session_state.page = "Chat"
             st.rerun()
         st.divider()
-        app_mode = st.radio("Menu", ["💬 Chatbot", "🎨 Pic Generate", "🖼️ See & Explain"])
+        app_mode = st.radio("Navigation", ["💬 Chatbot", "🎨 Pic Generate", "🖼️ See & Explain"])
         st.divider()
         st.caption("🚀 Karachi Edition | 2026")
         
         if st.session_state.is_pro:
-            st.markdown("<p style='color:#B8860B; font-weight:bold;'>💎 Pro Items</p>", unsafe_allow_html=True)
-            if st.button("📄 PDF Maker", use_container_width=True): st.session_state.page = "PDF_Mode"; st.rerun()
+            st.markdown("<p style='color:#B8860B; font-weight:bold;'>💎 Pro Features</p>", unsafe_allow_html=True)
+            if st.button("📄 Create PDF", use_container_width=True): st.session_state.page = "PDF_Mode"; st.rerun()
             if st.button("💻 AI Code", use_container_width=True): st.session_state.page = "Code_Mode"; st.rerun()
         
         if st.button("🚪 Logout", use_container_width=True):
             st.session_state.logged_in = False
             st.rerun()
 
-    # HEADER
+    # TOP LOGO/HEADER
     if st.session_state.is_pro:
         st.markdown('<div class="pro-header">✨ PRO MODE ACTIVE ✨</div>', unsafe_allow_html=True)
     else:
         st.markdown('<div class="normal-header">TahaGpt</div>', unsafe_allow_html=True)
 
     # PAGE: CHAT
-    if st.session_state.page == "Chat":
-        # Chat Messages Area
+    if st.session_state.page == "Chat" or app_mode == "💬 Chatbot":
+        # Extra space for messages so they don't get hidden by the sticky bar
+        st.write("") 
+        
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]): st.markdown(msg["content"])
 
-        # THE FIX: Bottom Attachment Bar
-        # Ye chat input ke bilkul upar hamesha rahega
-        st.write("") # Spacer
-        with st.popover("➕ Attach Files"):
-            st.write("📤 **Select Source**")
-            st.file_uploader("This Device", type=['png', 'jpg', 'pdf'])
-            st.button("Google Drive")
-            st.button("Web Link")
-
-        # THE INPUT BAR (Pinned by Streamlit naturally)
-        if prompt := st.chat_input("Message TahaGpt..."):
-            st.session_state.messages.append({"role": "user", "content": prompt})
-            with st.chat_message("user"): st.markdown(prompt)
-            
-            try:
-                res = client.models.generate_content(
-                    model="gemini-2.0-flash",
-                    config=types.GenerateContentConfig(system_instruction=TAHA_IDENTITY),
-                    contents=prompt
-                )
+        # STICKY BOTTOM BAR (Always Locked)
+        input_col1, input_col2 = st.columns([0.07, 0.93])
+        with input_col1:
+            with st.popover("＋"):
+                st.write("📤 **Upload Files**")
+                st.file_uploader("Upload Image", type=['png', 'jpg'])
+                st.button("Google Drive")
+        with input_col2:
+            if prompt := st.chat_input("Message TahaGpt..."):
+                st.session_state.messages.append({"role": "user", "content": prompt})
+                with st.chat_message("user"): st.markdown(prompt)
+                
+                res = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
                 st.session_state.messages.append({"role": "assistant", "content": res.text})
                 with st.chat_message("assistant"): st.markdown(res.text)
                 st.rerun()
-            except Exception as e: st.error(e)
+        
+        # Spacer for the sticky bar
+        st.markdown("<div style='height: 100px;'></div>", unsafe_allow_html=True)
 
-    # PAGE: PDF
+    # PAGE: PDF & CODE
     elif st.session_state.page == "PDF_Mode":
-        st.header("📄 PDF Assistant")
-        st.text_area("Content for PDF...")
-
-    # PAGE: CODE
+        st.header("📄 PDF Maker Studio")
+        st.text_area("Write content here...")
     elif st.session_state.page == "Code_Mode":
-        st.header("💻 Code Studio")
-        st.text_input("Coding prompt...")
+        st.header("💻 AI Coding Studio")
+        st.text_input("Describe your script...")
