@@ -3,9 +3,10 @@ from google import genai
 from google.genai import types
 from PIL import Image
 import io
+import time
 
 # --- PAGE SETUP ---
-st.set_page_config(page_title="TahaGpt Super App", page_icon="🚀", layout="wide")
+st.set_page_config(page_title="TahaGpt Pro", page_icon="🤖", layout="wide")
 
 # --- API CLIENT ---
 if "GEMINI_API_KEY" not in st.secrets:
@@ -23,7 +24,7 @@ with st.sidebar:
     
     st.divider()
     app_mode = st.radio("Select Tool:", ["💬 Chatbot", "🎨 Pic Generate", "🖼️ Analyze Image"])
-    st.info("Karachi Edition | 2026")
+    st.info("Free Tier Mode | Karachi 2026")
 
 # --- SESSION STATE ---
 if "messages" not in st.session_state:
@@ -36,22 +37,25 @@ if app_mode == "💬 Chatbot":
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    if prompt := st.chat_input("Ask anything..."):
+    if prompt := st.chat_input("Ask TahaGpt anything..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
 
         try:
-            # FIX: Using the most reliable stable name
+            # Using 1.5 Flash as it's more stable for Free Tier limits
             response = client.models.generate_content(
-                model="gemini-2.0-flash", 
+                model="gemini-1.5-flash", 
                 contents=prompt
             )
             with st.chat_message("assistant"):
                 st.markdown(response.text)
             st.session_state.messages.append({"role": "assistant", "content": response.text})
         except Exception as e:
-            st.error(f"Chat Error: {e}")
+            if "429" in str(e):
+                st.warning("⏳ Karachi Server is busy (Quota Limit). Please wait 30 seconds and try again!")
+            else:
+                st.error(f"Error: {e}")
 
 # --- MODE 2: PIC GENERATE ---
 elif app_mode == "🎨 Pic Generate":
@@ -61,7 +65,6 @@ elif app_mode == "🎨 Pic Generate":
     if st.button("✨ Generate"):
         with st.spinner("Drawing..."):
             try:
-                # FIX: Using the stable Image model name
                 response = client.models.generate_content(
                     model='imagen-3', 
                     contents=user_prompt,
@@ -71,7 +74,7 @@ elif app_mode == "🎨 Pic Generate":
                     if part.inline_data:
                         st.image(Image.open(io.BytesIO(part.inline_data.data)))
             except Exception as e:
-                st.error(f"Error: {e}")
+                st.error("Image generation is limited on Free Tier. Try again in a few minutes.")
 
 # --- MODE 3: ANALYZE IMAGE ---
 elif app_mode == "🖼️ Analyze Image":
@@ -81,6 +84,8 @@ elif app_mode == "🖼️ Analyze Image":
         img = Image.open(uploaded_file)
         st.image(img, use_container_width=True)
         if st.button("Analyze"):
-            # FIX: Using stable flash for vision
-            res = client.models.generate_content(model="gemini-2.0-flash", contents=["What is this?", img])
-            st.write(res.text)
+            try:
+                res = client.models.generate_content(model="gemini-1.5-flash", contents=["Explain this image:", img])
+                st.write(res.text)
+            except Exception as e:
+                st.error("Limit reached. Please wait.")
