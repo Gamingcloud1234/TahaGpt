@@ -2,63 +2,70 @@ import streamlit as st
 import google.generativeai as genai
 from PIL import Image
 
-# --- PAGE CONFIG ---
-st.set_page_config(page_title="TahaGpt Super App", page_icon="🚀")
+# --- PAGE SETUP ---
+st.set_page_config(page_title="TahaGpt Super App", page_icon="🚀", layout="wide")
 
-# --- API SETUP ---
+# --- API SECRETS ---
 try:
-    # Using the secret you just added
     API_KEY = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=API_KEY)
-    # Fix: Using the most stable model name for 2026
-    model = genai.GenerativeModel('gemini-1.5-flash') 
+    # Using 1.5 Flash - it's fast and handles images + text perfectly
+    model = genai.GenerativeModel('gemini-1.5-flash')
 except Exception as e:
-    st.error("Check your API Key in Secrets!")
+    st.error("Check your Streamlit Secrets for GEMINI_API_KEY!")
     st.stop()
 
-# --- SIDEBAR (UI) ---
+# --- SIDEBAR & NEW CHAT (+) ---
 with st.sidebar:
-    st.title("🚀 TahaGpt Pro")
+    st.title("⚙️ TahaGpt Menu")
     if st.button("➕ New Chat"):
         st.session_state.messages = []
         st.rerun()
     
     st.divider()
-    # Tool Selection
-    choice = st.radio("Select Tool:", ["💬 Chat", "🖼️ Analyze Image", "📁 PDF Info"])
+    app_mode = st.radio("Select Tool:", ["💬 Chatbot", "🖼️ Analyze Image", "🎨 Imagine (Coming Soon)"])
+    st.info("Home WiFi Version - Karachi")
 
-# --- CHAT LOGIC ---
+# --- INITIALIZE CHAT ---
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-if choice == "💬 Chat":
-    st.header("Chat with TahaGpt")
+# --- MODE: CHATBOT ---
+if app_mode == "💬 Chatbot":
+    st.header("💬 TahaGpt Conversation")
     
-    for msg in st.session_state.messages:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
 
-    if prompt := st.chat_input("How can I help you?"):
+    if prompt := st.chat_input("Ask TahaGpt anything..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
 
         # Generate Response
         response = model.generate_content(prompt)
-        st.session_state.messages.append({"role": "assistant", "content": response.text})
+        
         with st.chat_message("assistant"):
             st.markdown(response.text)
+        st.session_state.messages.append({"role": "assistant", "content": response.text})
 
-elif choice == "🖼️ Analyze Image":
-    st.header("Image AI")
-    file = st.file_uploader("Upload an image", type=["jpg", "png", "jpeg"])
-    if file:
-        img = Image.open(file)
-        st.image(img, use_container_width=True)
-        if st.button("What is this?"):
-            res = model.generate_content(["Describe this image in detail", img])
-            st.write(res.text)
+# --- MODE: IMAGE ANALYSIS ---
+elif app_mode == "🖼️ Analyze Image":
+    st.header("🖼️ Image Intelligence")
+    uploaded_file = st.file_uploader("Upload a photo", type=['png', 'jpg', 'jpeg'])
+    
+    if uploaded_file:
+        img = Image.open(uploaded_file)
+        st.image(img, caption="Uploaded Image", use_container_width=True)
+        
+        if st.button("Analyze this Photo"):
+            with st.spinner("Looking at the image..."):
+                response = model.generate_content(["Please describe this image in detail and tell me what you see.", img])
+                st.write("### AI Analysis:")
+                st.write(response.text)
 
-elif choice == "📁 PDF Info":
-    st.header("PDF Tools")
-    st.info("Upload your 9th grade notes here soon!")
+# --- MODE: IMAGINE ---
+elif app_mode == "🎨 Imagine (Coming Soon)":
+    st.header("🎨 Image Generation")
+    st.info("Taha, generating images requires a different API (like DALL-E). For now, use 'Analyze Image' to talk to your photos!")
