@@ -4,131 +4,176 @@ from google.genai import types
 from PIL import Image
 import io
 
-# --- 1. PAGE SETUP & PREMIUM CSS ---
-st.set_page_config(page_title="TahaGpt", page_icon="🤖", layout="wide")
+# --- 1. THEME & WHITE STYLING (Safe CSS) ---
+st.set_page_config(page_title="TahaGpt Pro", page_icon="🤖", layout="wide")
 
+# CSS to force Light Mode, White Background, and professional layout
 st.markdown("""
     <style>
-        /* Modern Sidebar */
+        /* Force White Background and Black Text for main area */
+        .stApp {
+            background-color: #ffffff !important;
+            color: #000000 !important;
+        }
+
+        /* Standard Sidebar Styling (Light Gray for contrast) */
         [data-testid="stSidebar"] {
-            background-color: #000000;
-            color: #ffffff;
+            background-color: #f7f7f8 !important;
+            color: #000000 !important;
+            border-right: 1px solid #e5e5e5;
         }
-        /* Chat Input Styling */
+
+        /* Chat Bubbles (Light Style) */
+        .stChatMessage {
+            background-color: #f7f7f8;
+            border-radius: 12px;
+            margin-bottom: 8px;
+            padding: 10px;
+        }
+
+        /* Style the input bar at the bottom */
         .stChatInput {
-            border-radius: 25px !important;
-            padding-bottom: 20px;
+            border-radius: 20px !important;
+            box-shadow: 0 0 10px rgba(0,0,0,0.05);
         }
-        /* Remove Sidebar Menu "Boring" Look */
-        .stRadio [data-testid="stWidgetLabel"] {
-            display: none;
+
+        /* Premium spacing */
+        .block-container {
+            padding-top: 2rem;
+            padding-bottom: 2rem;
         }
-        /* Hide Streamlit Branding */
-        #MainMenu {visibility: hidden;}
-        footer {visibility: hidden;}
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. API CLIENT ---
+# --- 2. API CLIENT & SECRETS (Safe Check) ---
 if "GEMINI_API_KEY" not in st.secrets:
-    st.error("⚠️ Add GEMINI_API_KEY to Streamlit Secrets!")
+    st.error("⚠️ KEY MISSING: Check your Streamlit Secrets vault for GEMINI_API_KEY")
     st.stop()
 
+# Initialize the 2026-ready client (using stable v1 API)
 client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
 
-# --- 3. SIDEBAR (The Modern Menu) ---
+# --- 3. THE IDENTITY (System Instruction) ---
+# Taha, this ensures the AI always calls itself TahaGpt.
+instruction = "Your name is TahaGpt. You were created by M. Taha Farooq, a young 9th-grade developer and robotics enthusiast from Karachi. Always introduce yourself by your name, TahaGpt."
+
+# --- 4. SIDEBAR UI (The Menu) ---
 with st.sidebar:
-    st.title("🤖 TahaGpt")
+    # --- ADD YOUR PIC HERE ---
+    # Put your GitHub RAW picture URL in the quotes below. Example:
+    # "https://raw.githubusercontent.com/TAHA_USER/TAHAGPT/main/my_pic.jpg"
+    CREATOR_PIC = "YOUR_PIC_URL_HERE"
     
+    # Try to load the profile pic
+    try:
+        st.image(CREATOR_PIC, width=90)
+    except:
+        # Failsafe icon if you haven't added the URL yet
+        st.image("https://cdn-icons-png.flaticon.com/512/4712/4712035.png", width=70)
+        
+    st.title("🤖 TahaGpt Menu")
+    
+    # The Modern "+" Icon (New Chat)
     if st.button("➕ New Chat", use_container_width=True):
         st.session_state.messages = []
         st.rerun()
     
     st.divider()
     
-    # Tool selection looks like a modern menu now
-    app_mode = st.radio(
-        "Navigation",
-        ["💬 Chat", "🎨 Pic Generate", "🖼️ See & Explain"],
-        captions=["Fast & Smart", "Nano Banana 2 Engine", "Analyze Photos"]
+    # Clean tool selection menu
+    tool_choice = st.radio(
+        "AI Assistant Tools",
+        ["💬 Smart Chatbot", "🎨 Pic Generate", "🖼️ See & Explain"]
     )
     
-    st.sidebar.markdown("---")
-    st.sidebar.caption("🚀 Developed by M. Taha Farooq")
-    st.sidebar.caption("Karachi, Pakistan | 2026")
+    st.divider()
+    st.caption("🚀 Created by M. Taha Farooq")
+    st.caption("Karachi | April 2026")
 
-# --- 4. SESSION STATE ---
+# --- 5. INITIALIZE CHAT HISTORY ---
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# --- 5. MODES ---
+# Show welcome if chat is empty
+if tool_choice == "💬 Smart Chatbot" and not st.session_state.messages:
+    st.info("👋 Hello, Taha. I am TahaGpt. What are we building today?")
 
-# THE IDENTITY (System Instruction)
-sys_msg = "Your name is TahaGpt. You were created by M. Taha Farooq. You are a helpful, witty, and intelligent AI assistant. Never refer to yourself by any other name."
+# Render Chat History (using the modern chat format)
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
 
-if app_mode == "💬 Chat":
-    # Show welcome message if chat is empty
-    if not st.session_state.messages:
-        st.write("### Hello, Taha. How can I assist you today?")
+# --- 6. LOGIC FOR ASSISTANT MODES ---
 
-    for msg in st.session_state.messages:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
-
-    if prompt := st.chat_input("Ask TahaGpt..."):
+# MODE 1: SMART CHATBOT
+if tool_choice == "💬 Smart Chatbot":
+    if prompt := st.chat_input("Message TahaGpt..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
 
+        # Generating content using the latest model and system instruction
         try:
             response = client.models.generate_content(
-                model="gemini-2.5-flash", 
-                config=types.GenerateContentConfig(system_instruction=sys_msg),
+                model="gemini-2.0-flash", 
+                config=types.GenerateContentConfig(system_instruction=instruction),
                 contents=prompt
             )
+            
             with st.chat_message("assistant"):
                 st.markdown(response.text)
             st.session_state.messages.append({"role": "assistant", "content": response.text})
         except Exception as e:
             st.error(f"Chat Error: {e}")
 
-elif app_mode == "🎨 Pic Generate":
-    st.header("🎨 AI Image Creator")
-    user_prompt = st.text_area("Describe what you want to see:", placeholder="A robotic cricket match in Karachi...")
+# MODE 2: PIC GENERATE (PicCreator tool)
+elif tool_choice == "🎨 Pic Generate":
+    st.header("🎨 AI Image Generation")
+    user_prompt = st.text_area("Describe the picture you want to create:")
     
-    if st.button("✨ Generate"):
+    if st.button("✨ Draw Picture"):
         if user_prompt:
             with st.spinner("TahaGpt is drawing..."):
                 try:
+                    # Specialized model for image generation
                     response = client.models.generate_content(
                         model='gemini-2.5-flash-image',
                         contents=user_prompt,
                         config=types.GenerateContentConfig(response_modalities=["IMAGE"])
                     )
+                    
+                    # Extra part for image tools
                     for part in response.candidates[0].content.parts:
                         if part.inline_data:
-                            img = Image.open(io.BytesIO(part.inline_data.data))
-                            st.image(img, caption="Created for Taha", use_container_width=True)
+                            img_data = io.BytesIO(part.inline_data.data)
+                            img = Image.open(img_data)
+                            st.image(img, caption=f"Created for Taha: {user_prompt}", use_container_width=True)
                 except Exception as e:
                     st.error(f"Image Error: {e}")
         else:
-            st.warning("Please enter a description first!")
+            st.warning("Please describe the picture first!")
 
-elif app_mode == "🖼️ See & Explain":
+# MODE 3: SEE & EXPLAIN (Multimodal tool)
+elif tool_choice == "🖼️ See & Explain":
     st.header("🖼️ Image Intelligence")
-    uploaded_file = st.file_uploader("Upload a photo", type=['png', 'jpg', 'jpeg'])
+    st.write("Upload a photo and let the AI explain it.")
+    file = st.file_uploader("Upload Image", type=["jpg", "png", "jpeg"])
     
-    if uploaded_file:
-        img = Image.open(uploaded_file)
+    if file:
+        img = Image.open(file)
         st.image(img, use_container_width=True)
+        
+        query = st.text_input("What do you want to know about this photo?", "Describe this image.")
+        
         if st.button("🔍 Analyze"):
-            with st.spinner("Looking closely..."):
+            with st.spinner("Analyzing..."):
                 try:
+                    # Model handles both image and text simultaneously
                     res = client.models.generate_content(
-                        model="gemini-2.5-flash", 
-                        contents=["Explain this image to me:", img]
+                        model="gemini-2.0-flash", 
+                        contents=[query, img]
                     )
-                    st.write("### Analysis:")
+                    st.write("### AI Analysis:")
                     st.write(res.text)
                 except Exception as e:
-                    st.error(f"Analysis Error: {e}")
+                    st.error(f"Vision Error: {e}")
