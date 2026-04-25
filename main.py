@@ -62,7 +62,7 @@ with st.sidebar:
     # --- ADD YOUR PICTURE HERE ---
     # Upload your pic to GitHub and put the RAW URL here
     # Example: "https://raw.githubusercontent.com/username/repo/main/my_pic.jpg"
-    MY_PIC_URL = "YOUR_GITHUB_RAW_IMAGE_URL_HERE"
+    MY_PIC_URL = "https://raw.githubusercontent.com/Gamingcloud1234/TahaGpt/main/Taha.jpeg"
     
     try:
         st.image(MY_PIC_URL, width=100)
