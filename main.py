@@ -69,7 +69,7 @@ with st.sidebar:
     except:
         st.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=100)
     
-    st.markdown("<p class='user-label'>M. Taha Farooq (Admin)</p>", unsafe_allow_html=True)
+    st.markdown("<p class='user-label'>M. Taha Farooq (Owner)</p>", unsafe_allow_html=True)
     
     if st.button("➕ New Chat", use_container_width=True):
         st.session_state.messages = []
