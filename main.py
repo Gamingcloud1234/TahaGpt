@@ -4,63 +4,47 @@ from google.genai import types
 from PIL import Image
 import io
 
-# --- 1. PAGE CONFIGURATION ---
+# --- PAGE SETUP ---
 st.set_page_config(page_title="TahaGpt Super App", page_icon="🚀", layout="wide")
 
-# --- 2. API SETUP ---
+# --- API CLIENT ---
 if "GEMINI_API_KEY" not in st.secrets:
-    st.error("⚠️ Please add GEMINI_API_KEY to your Streamlit Secrets!")
+    st.error("⚠️ Add GEMINI_API_KEY to Secrets!")
     st.stop()
 
-# Initialize the new 2026 GenAI Client
 client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
 
-# --- 3. SIDEBAR UI (The Menu) ---
+# --- SIDEBAR UI ---
 with st.sidebar:
-    st.title("🤖 TahaGpt Pro")
-    st.subheader("Karachi Home Edition")
-    
-    # THE "+" ICON / NEW CHAT BUTTON
+    st.title("🤖 TahaGpt Menu")
     if st.button("➕ New Chat", use_container_width=True):
         st.session_state.messages = []
         st.rerun()
     
     st.divider()
-    
-    # App Mode Selection
-    app_mode = st.radio(
-        "Select a Tool:",
-        ["💬 Smart Chat", "🎨 Pic Generate", "🖼️ See & Explain"]
-    )
-    
-    st.divider()
-    st.caption("Powered by Gemini 3.1 Flash")
+    app_mode = st.radio("Select Tool:", ["💬 Chatbot", "🎨 Pic Generate", "🖼️ Analyze Image"])
+    st.info("Karachi Edition | 2026")
 
-# --- 4. SESSION STATE FOR CHAT ---
+# --- SESSION STATE ---
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# --- 5. APP MODES ---
+# --- MODE 1: CHATBOT ---
+if app_mode == "💬 Chatbot":
+    st.header("💬 Smart Chat")
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
 
-# --- MODE 1: SMART CHAT ---
-if app_mode == "💬 Smart Chat":
-    st.header("💬 TahaGpt Conversation")
-    
-    # Display message history
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-
-    # User Input
-    if prompt := st.chat_input("Ask TahaGpt anything..."):
+    if prompt := st.chat_input("Ask anything..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        # Generate Response using the newest Flash model
         try:
+            # FIX: Using the most reliable stable name
             response = client.models.generate_content(
-                model="gemini-3.1-flash-preview", 
+                model="gemini-2.0-flash", 
                 contents=prompt
             )
             with st.chat_message("assistant"):
@@ -72,53 +56,31 @@ if app_mode == "💬 Smart Chat":
 # --- MODE 2: PIC GENERATE ---
 elif app_mode == "🎨 Pic Generate":
     st.header("🎨 AI Image Creator")
-    st.write("Describe a picture, and I will draw it for you!")
+    user_prompt = st.text_area("Describe the image...")
     
-    user_prompt = st.text_area("What should I draw?", placeholder="A futuristic Karachi city with flying cars...")
-    
-    if st.button("✨ Generate Picture"):
-        if user_prompt:
-            with st.spinner("TahaGpt is painting..."):
-                try:
-                    # Using the specialized 3.1 Image model (Nano Banana 2)
-                    response = client.models.generate_content(
-                        model='gemini-3.1-flash-image-preview',
-                        contents=user_prompt,
-                        config=types.GenerateContentConfig(response_modalities=["IMAGE"])
-                    )
-                    
-                    # Display the generated image
-                    for part in response.candidates[0].content.parts:
-                        if part.inline_data:
-                            img_data = io.BytesIO(part.inline_data.data)
-                            img = Image.open(img_data)
-                            st.image(img, caption=f"Result for: {user_prompt}", use_container_width=True)
-                except Exception as e:
-                    st.error(f"Image Generation Error: {e}")
-        else:
-            st.warning("Please type a description first!")
+    if st.button("✨ Generate"):
+        with st.spinner("Drawing..."):
+            try:
+                # FIX: Using the stable Image model name
+                response = client.models.generate_content(
+                    model='imagen-3', 
+                    contents=user_prompt,
+                    config=types.GenerateContentConfig(response_modalities=["IMAGE"])
+                )
+                for part in response.candidates[0].content.parts:
+                    if part.inline_data:
+                        st.image(Image.open(io.BytesIO(part.inline_data.data)))
+            except Exception as e:
+                st.error(f"Error: {e}")
 
-# --- MODE 3: SEE & EXPLAIN ---
-elif app_mode == "🖼️ See & Explain":
+# --- MODE 3: ANALYZE IMAGE ---
+elif app_mode == "🖼️ Analyze Image":
     st.header("🖼️ Image Intelligence")
-    st.write("Upload a photo and ask me questions about it.")
-    
-    uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
-    
+    uploaded_file = st.file_uploader("Upload photo", type=['png', 'jpg', 'jpeg'])
     if uploaded_file:
         img = Image.open(uploaded_file)
-        st.image(img, caption="Your Upload", use_container_width=True)
-        
-        user_question = st.text_input("What do you want to know about this photo?", "What is in this image?")
-        
-        if st.button("🔍 Analyze"):
-            with st.spinner("Analyzing..."):
-                try:
-                    response = client.models.generate_content(
-                        model="gemini-3.1-flash-preview",
-                        contents=[user_question, img]
-                    )
-                    st.write("### TahaGpt's Observation:")
-                    st.write(response.text)
-                except Exception as e:
-                    st.error(f"Analysis Error: {e}")
+        st.image(img, use_container_width=True)
+        if st.button("Analyze"):
+            # FIX: Using stable flash for vision
+            res = client.models.generate_content(model="gemini-2.0-flash", contents=["What is this?", img])
+            st.write(res.text)
