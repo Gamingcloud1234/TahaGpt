@@ -11,11 +11,12 @@ from PIL import Image
 from gtts import gTTS
 from fpdf import FPDF
 
-# --- 1. DATA STORAGE & SECURITY ---
+# --- 1. DATA STORAGE ---
 DB_FILE = "users_db.json"
 
 def load_db():
     if not os.path.exists(DB_FILE):
+        # Default Admin is the only Pro by default
         db = {"admin": {"pass": hashlib.sha256("taha123".encode()).hexdigest(), "is_pro": True}}
         with open(DB_FILE, "w") as f: json.dump(db, f)
         return db
@@ -32,25 +33,25 @@ def get_audio_html(text):
     audio_b64 = base64.b64encode(fp.read()).decode()
     return f'<audio autoplay src="data:audio/mp3;base64,{audio_b64}">'
 
-# --- 2. LUXURY UI DESIGN ---
-st.set_page_config(page_title="TahaGpt V3 Pro", page_icon="🔱", layout="wide")
+# --- 2. PREMIUM WHITE UI DESIGN ---
+st.set_page_config(page_title="TahaGpt V3.1", page_icon="🚀", layout="wide")
 
 st.markdown("""
     <style>
-    .stApp { background-color: #0e1117; color: #ffffff; }
-    [data-testid="stSidebar"] { background-color: #161b22 !important; border-right: 1px solid #30363d; }
+    .stApp { background-color: #ffffff; color: #000000; }
+    [data-testid="stSidebar"] { background-color: #f8f9fa !important; border-right: 1px solid #eeeeee; }
     .auth-card {
-        background: #1c2128; padding: 40px; border-radius: 20px;
-        border: 1px solid #30363d; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-        text-align: center;
+        background: #ffffff; padding: 40px; border-radius: 20px;
+        border: 1px solid #eeeeee; box-shadow: 0 10px 30px rgba(0,0,0,0.05);
+        text-align: center; color: #000;
     }
     .pro-tag {
         background: linear-gradient(90deg, #FFD700, #FFA500);
         color: black; padding: 5px 15px; border-radius: 50px;
-        font-weight: bold; font-size: 14px;
+        font-weight: bold; font-size: 14px; display: inline-block;
     }
-    .stButton>button { border-radius: 10px !important; transition: 0.3s; }
-    .stButton>button:hover { transform: scale(1.02); background: #FFD700 !important; color: black !important; }
+    .stButton>button { border-radius: 10px !important; }
+    .stChatMessage { background-color: #f7f7f8; border-radius: 15px; border: 1px solid #eee; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -66,29 +67,30 @@ if not st.session_state.logged_in:
     col1, col2, col3 = st.columns([1, 1.5, 1])
     with col2:
         st.markdown('<div class="auth-card">', unsafe_allow_html=True)
-        st.markdown("<h1 style='color:#FFD700;'>TahaGpt V3</h1><p>Next-Gen Intelligence</p>", unsafe_allow_html=True)
+        st.markdown("<h1 style='color:#000;'>TahaGpt V3.1</h1><p style='color:#666;'>Elite Intelligence</p>", unsafe_allow_html=True)
         
-        tab_l, tab_r = st.tabs(["🔒 Secure Login", "📝 New Account"])
+        tab_l, tab_r = st.tabs(["🔒 Login", "📝 Register"])
         db = load_db()
         
         with tab_l:
-            u = st.text_input("Username", placeholder="Enter username")
-            p = st.text_input("Password", type="password", placeholder="Enter password")
-            if st.button("Access System", use_container_width=True):
+            u = st.text_input("Username")
+            p = st.text_input("Password", type="password")
+            if st.button("Sign In", use_container_width=True):
                 hp = hashlib.sha256(p.encode()).hexdigest()
                 if u in db and db[u]["pass"] == hp:
                     st.session_state.user_data = {"name": u, "is_pro": db[u].get("is_pro", False)}
                     st.session_state.logged_in = True
                     st.rerun()
-                else: st.error("Access Denied: Invalid Credentials")
+                else: st.error("Invalid Credentials")
 
         with tab_r:
             new_u = st.text_input("Choose Username")
             new_p = st.text_input("Choose Password", type="password")
-            if st.button("Create Pro ID", use_container_width=True):
+            if st.button("Create Account", use_container_width=True):
                 if new_u and new_p:
+                    # New accounts are NOT pro by default
                     db[new_u] = {"pass": hashlib.sha256(new_p.encode()).hexdigest(), "is_pro": False}
-                    save_db(db); st.success("Account Ready! Switch to Login tab.")
+                    save_db(db); st.success("Account created successfully!")
         st.markdown('</div>', unsafe_allow_html=True)
 
 # --- 5. MAIN APPLICATION ---
@@ -96,94 +98,101 @@ else:
     user = st.session_state.user_data["name"]
     is_pro = st.session_state.user_data["is_pro"]
 
-    # Dynamic API Selection
     try:
         active_key = st.secrets["PRO_API_KEY"] if is_pro else st.secrets["FREE_API_KEY"]
         client = genai.Client(api_key=active_key)
     except:
-        st.error("Setup Error: API Keys missing in Secrets.")
+        st.error("API Keys missing in Secrets.")
         st.stop()
 
     # --- SIDEBAR ---
     with st.sidebar:
         st.markdown(f"### 👤 {user}")
-        if is_pro: st.markdown('<span class="pro-tag">⭐ PRO UNLOCKED</span>', unsafe_allow_html=True)
+        if is_pro: 
+            st.markdown('<span class="pro-tag">⭐ PRO</span>', unsafe_allow_html=True)
         
         st.divider()
-        mode = st.radio("Intelligence Mode", ["💬 Chat & Voice", "🎨 Thumbnail Studio", "📄 PDF Creator"])
+        mode = st.radio("Menu", ["💬 Chat", "🎨 Art Studio", "📄 PDF Creator"])
         
-        if mode == "💬 Chat & Voice":
-            st.session_state.voice_enabled = st.toggle("🔊 Voice Responses", value=st.session_state.voice_enabled)
+        if mode == "💬 Chat":
+            if is_pro:
+                st.session_state.voice_enabled = st.toggle("🔊 Voice Response", value=st.session_state.voice_enabled)
+            else:
+                st.info("🔊 Voice is a Pro Feature")
 
+        st.divider()
         if not is_pro:
-            with st.expander("💎 Upgrade to Pro"):
+            with st.expander("💎 Upgrade Account"):
                 code = st.text_input("Promo Code")
                 if st.button("Activate"):
                     if code == "TAHA2026":
                         db = load_db(); db[user]["is_pro"] = True; save_db(db)
-                        st.session_state.user_data["is_pro"] = True; st.rerun()
-                if st.button("💳 Pay 10 PKR"):
+                        st.session_state.user_data["is_pro"] = True
+                        st.toast("🎉 PRO ACTIVATED!"); st.balloons()
+                        time.sleep(1); st.rerun()
+                if st.button("💳 Buy for 10 PKR"):
                     db = load_db(); db[user]["is_pro"] = True; save_db(db)
-                    st.session_state.user_data["is_pro"] = True; st.rerun()
+                    st.session_state.user_data["is_pro"] = True
+                    st.toast("💳 Payment Successful!"); st.balloons()
+                    time.sleep(1); st.rerun()
 
         if st.button("🚪 Logout", use_container_width=True):
             st.session_state.logged_in = False; st.rerun()
 
-    # --- MODE 1: CHAT & VOICE ---
-    if mode == "💬 Chat & Voice":
-        st.markdown(f"## Hello, {user}")
+    # --- CHAT & VOICE ---
+    if mode == "💬 Chat":
+        st.markdown(f"## Welcome to TahaGpt")
         for m in st.session_state.messages:
             with st.chat_message(m["role"]): st.markdown(m["content"])
 
-        if prompt := st.chat_input("Ask me anything..."):
+        if prompt := st.chat_input("Message TahaGpt..."):
             st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"): st.markdown(prompt)
 
             try:
+                # Use Flash for stability against 429 errors
                 res = client.models.generate_content(model="gemini-1.5-flash", contents=prompt)
                 ans = res.text
                 st.session_state.messages.append({"role": "assistant", "content": ans})
                 with st.chat_message("assistant"): 
                     st.markdown(ans)
-                    if st.session_state.voice_enabled:
-                        st.markdown(get_audio_html(ans[:300]), unsafe_allow_html=True) # Limit voice to 300 chars for speed
-            except: st.error("Server Busy. Retry in 10s.")
+                    if is_pro and st.session_state.voice_enabled:
+                        st.markdown(get_audio_html(ans[:300]), unsafe_allow_html=True)
+            except Exception as e:
+                if "429" in str(e):
+                    st.error("⚠️ Server Busy. Please retry in 10 seconds.")
+                else:
+                    st.error("An error occurred. Please try again.")
 
-    # --- MODE 2: THUMBNAIL STUDIO ---
-    elif mode == "🎨 Thumbnail Studio":
-        st.header("🎨 Thumbnail & Image Generator")
-        desc = st.text_area("Describe the thumbnail or image you want:")
-        if st.button("Generate Art"):
-            with st.spinner("AI Artist is working..."):
+    # --- ART STUDIO ---
+    elif mode == "🎨 Art Studio":
+        st.header("🎨 AI Image Studio")
+        desc = st.text_input("Describe the image:")
+        if st.button("Generate"):
+            with st.spinner("AI is drawing..."):
                 try:
                     res = client.models.generate_content(
                         model='gemini-1.5-flash', 
-                        contents=f"Generate a high-quality thumbnail image for: {desc}", 
+                        contents=desc, 
                         config=types.GenerateContentConfig(response_modalities=["IMAGE"])
                     )
                     for part in res.candidates[0].content.parts:
                         if part.inline_data:
-                            img_data = Image.open(io.BytesIO(part.inline_data.data))
-                            st.image(img_data, caption="Generated Thumbnail", use_container_width=True)
-                except: st.error("Image generation is at capacity. Upgrade to Pro for priority.")
+                            st.image(Image.open(io.BytesIO(part.inline_data.data)), use_container_width=True)
+                except: st.error("Image limit reached. Retry in 1 minute.")
 
-    # --- MODE 3: PDF CREATOR ---
+    # --- PDF CREATOR ---
     elif mode == "📄 PDF Creator":
-        st.header("📄 AI PDF Document Export")
-        if not is_pro: st.warning("PDF Export is a PRO feature. Please upgrade."); st.stop()
-        
-        pdf_title = st.text_input("Document Title")
-        pdf_content = st.text_area("Write content or paste it here:", height=300)
-        
-        if st.button("Generate PDF"):
-            pdf = FPDF()
-            pdf.add_page()
-            pdf.set_font("Arial", 'B', 16)
-            pdf.cell(40, 10, pdf_title)
-            pdf.ln(20)
-            pdf.set_font("Arial", size=12)
-            pdf.multi_cell(0, 10, pdf_content)
-            
-            pdf_output = pdf.output(dest='S').encode('latin-1')
-            st.download_button(label="📥 Download PDF", data=pdf_output, file_name=f"{pdf_title}.pdf", mime="application/pdf")
-            st.success("Document Ready for Download!")
+        st.header("📄 PDF Document Export")
+        if not is_pro: 
+            st.warning("PDF Creator is for PRO members only.")
+        else:
+            pdf_title = st.text_input("Title")
+            pdf_content = st.text_area("Content", height=300)
+            if st.button("Download PDF"):
+                pdf = FPDF()
+                pdf.add_page(); pdf.set_font("Arial", 'B', 16)
+                pdf.cell(40, 10, pdf_title); pdf.ln(20)
+                pdf.set_font("Arial", size=12); pdf.multi_cell(0, 10, pdf_content)
+                pdf_output = pdf.output(dest='S').encode('latin-1')
+                st.download_button("📥 Save PDF", data=pdf_output, file_name=f"{pdf_title}.pdf", mime="application/pdf")
