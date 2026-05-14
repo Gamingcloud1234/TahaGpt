@@ -5,7 +5,7 @@ from PIL import Image
 import io
 
 # --- 1. PREMIUM WHITE THEME ---
-st.set_page_config(page_title="TahaGpt Pro", page_icon="🚀", layout="wide")
+st.set_page_config(page_title="Fenix Pro", page_icon="🔥", layout="wide")
 
 st.markdown("""
     <style>
@@ -20,7 +20,7 @@ st.markdown("""
             text-align: center; font-weight: bold; font-size: 16px;
             margin-bottom: 15px; border: 1px solid #E6B800;
         }
-        .normal-header { text-align: center; font-size: 28px; font-weight: bold; margin-bottom: 15px; }
+        .normal-header { text-align: center; font-size: 28px; font-weight: bold; margin-bottom: 15px; color: #ff4b4b; }
         .pro-item-text { color: #B8860B; font-weight: bold; font-size: 14px; margin-top: 10px; }
         
         /* Auth Screen Styling */
@@ -30,7 +30,7 @@ st.markdown("""
 
 # --- 2. SESSION STATE (AUTH & DATA) ---
 if "users" not in st.session_state:
-    st.session_state.users = {"admin": "taha123"}  # Default admin account
+    st.session_state.users = {"admin": "taha123"}  
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 if "current_user" not in st.session_state:
@@ -44,7 +44,7 @@ if "page" not in st.session_state:
 
 # --- 3. LOGIN & REGISTER SCREEN ---
 def show_auth_page():
-    st.markdown("<div class='normal-header'>TahaGpt Access</div>", unsafe_allow_html=True)
+    st.markdown("<div class='normal-header'>Fenix Access</div>", unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
@@ -85,7 +85,7 @@ else:
         st.stop()
 
     client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
-    TAHA_IDENTITY = f"Your name is TahaGpt. Created by M. Taha Farooq for {st.session_state.current_user}."
+    TAHA_IDENTITY = f"Your name is Fenix. Created by M. Taha Farooq for {st.session_state.current_user}."
 
     # --- SIDEBAR UI ---
     with st.sidebar:
@@ -111,7 +111,17 @@ else:
         elif app_mode == "🖼️ See & Explain": st.session_state.page = "See"
 
         st.divider()
-        st.caption("🚀 Karachi Edition | 2026")
+        
+        # --- MODEL SELECTOR ---
+        st.markdown("### 🤖 Model Settings")
+        selected_model = st.selectbox(
+            "Brain Engine",
+            ["gemini-2.0-flash", "gemini-2.0-pro-exp-02-05", "gemini-1.5-flash", "gemini-1.5-pro"],
+            index=0
+        )
+
+        st.divider()
+        st.caption("🔥 Fenix Karachi | 2026")
 
         # --- PRO SECTION ---
         if not st.session_state.is_pro:
@@ -142,9 +152,9 @@ else:
 
     # --- TOP HEADER ---
     if st.session_state.is_pro:
-        st.markdown('<div class="pro-header">✨ PRO MODE ACTIVE ✨</div>', unsafe_allow_html=True)
+        st.markdown('<div class="pro-header">✨ FENIX PRO ACTIVE ✨</div>', unsafe_allow_html=True)
     else:
-        st.markdown('<div class="normal-header">TahaGpt</div>', unsafe_allow_html=True)
+        st.markdown('<div class="normal-header">Fenix</div>', unsafe_allow_html=True)
 
     # --- PAGE LOGIC ---
     if st.session_state.page == "PDF_Mode":
@@ -160,7 +170,7 @@ else:
         if st.button("Write Code"):
             with st.spinner("Coding..."):
                 try:
-                    res = client.models.generate_content(model="gemini-2.5-flash", contents=f"Write {lang} code for: {query}")
+                    res = client.models.generate_content(model=selected_model, contents=f"Write {lang} code for: {query}")
                     st.code(res.text, language=lang.lower())
                 except Exception as e: st.error(e)
 
@@ -168,12 +178,12 @@ else:
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]): st.markdown(msg["content"])
         
-        if prompt := st.chat_input("Message TahaGpt..."):
+        if prompt := st.chat_input("Message Fenix..."):
             st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"): st.markdown(prompt)
             try:
                 response = client.models.generate_content(
-                    model="gemini-2.5-flash",
+                    model=selected_model,
                     config=types.GenerateContentConfig(system_instruction=TAHA_IDENTITY),
                     contents=prompt
                 )
@@ -186,7 +196,9 @@ else:
         p = st.text_input("Describe the image:")
         if st.button("Generate"):
             try:
-                res = client.models.generate_content(model='gemini-2.5-flash-image', contents=p, config=types.GenerateContentConfig(response_modalities=["IMAGE"]))
+                # Image models usually have specific names
+                img_model = 'gemini-2.0-flash' if '2.0' in selected_model else 'gemini-1.5-flash'
+                res = client.models.generate_content(model=img_model, contents=p, config=types.GenerateContentConfig(response_modalities=["IMAGE"]))
                 for part in res.candidates[0].content.parts:
                     if part.inline_data: st.image(Image.open(io.BytesIO(part.inline_data.data)), use_container_width=True)
             except Exception as e: st.error(e)
@@ -198,5 +210,5 @@ else:
             img = Image.open(uploaded_file)
             st.image(img, caption='Uploaded Image', use_container_width=True)
             if st.button("Analyze Image"):
-                res = client.models.generate_content(model="gemini-2.5-flash", contents=["Describe this image", img])
+                res = client.models.generate_content(model=selected_model, contents=["Describe this image", img])
                 st.write(res.text)
