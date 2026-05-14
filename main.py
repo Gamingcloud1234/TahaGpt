@@ -10,6 +10,13 @@ import zipfile
 import os
 import time  # Cache breaking module initialization
 
+# Try importing groq natively, provide explicit error handling if not installed
+try:
+    from groq import Groq
+except ImportError:
+    st.error("Please add 'groq' to your requirements.txt or run: pip install groq")
+    st.stop()
+
 # --- 1. PREMIUM WHITE & HIGH-ACCURACY UI THEME ---
 st.set_page_config(page_title="Fenix Pro", page_icon="🔥", layout="wide")
 
@@ -91,15 +98,17 @@ def show_auth_page():
 if not st.session_state.logged_in:
     show_auth_page()
 else:
+    # Verifying available credentials setup
+    groq_available = "GROQ_API_KEY" in st.secrets
     gemini_available = "GEMINI_API_KEY" in st.secrets
-    openai_available = "OPENAI_API_KEY" in st.secrets
 
-    if not gemini_available and not openai_available:
-        st.error("⚠️ CRITICAL ERROR: Provide API keys in Streamlit secrets.")
+    if not groq_available:
+        st.error("⚠️ CRITICAL ERROR: Please provide GROQ_API_KEY in Streamlit secrets for unlimited processing.")
         st.stop()
 
+    # Initializing Cloud Clients
+    groq_client = Groq(api_key=st.secrets["GROQ_API_KEY"])
     gemini_client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"]) if gemini_available else None
-    openai_client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"]) if openai_available else None
     
     # Injected strict tracking profile directives for location queries
     FENIX_IDENTITY = (
@@ -133,26 +142,18 @@ else:
 
         st.divider()
         
-        # --- INFRASTRUCTURE BRAIN DISPLAY MAP ---
-        # Complete renaming architecture mapped back to functional backend cores
+        # --- INFRASTRUCTURE BRAIN DISPLAY MAP (GROQ DRIVEN) ---
+        # Remapping your exact same custom names to unlimited high-speed Groq models
         model_display_map = {
-            "Fenix 2.5 flash": "gemini-2.5-flash",
-            "fenix 2.0 [Under Dev]": "gemini-2.0-flash",
-            "Fenix 1 [Under Dev]": "gemini-2.5-pro",
-            "GPT-4o-Mini [Under Dev]": "gpt-4o-mini",
-            "GPT-4o [Under Dev]": "gpt-4o"
+            "Fenix 2.5 flash": "llama-3.3-70b-specdec", # Unlimited high-speed production model
+            "fenix 2.0 [Under Dev]": "llama3-8b-8192",
+            "Fenix 1 [Under Dev]": "mixtral-8x7b-32768"
         }
         
-        # Filter visibility arrays based on active pipeline key assets
-        visible_options = []
-        if gemini_available:
-            visible_options += ["Fenix 2.5 flash", "fenix 2.0 [Under Dev]", "Fenix 1 [Under Dev]"]
-        if openai_available:
-            visible_options += ["GPT-4o-Mini [Under Dev]", "GPT-4o [Under Dev]"]
+        visible_options = ["Fenix 2.5 flash", "fenix 2.0 [Under Dev]", "Fenix 1 [Under Dev]"]
             
         selected_display = st.selectbox("Active Brain Core", visible_options, index=0)
         selected_model = model_display_map[selected_display]
-        is_openai_selected = selected_model.startswith("gpt-")
 
         # --- DYNAMIC EXPORT LOG COMPILER (ZIP) ---
         if st.session_state.last_qa_text:
@@ -217,19 +218,16 @@ else:
         query = st.text_input("Technical prompt specifications:")
         
         if st.button("Execute Code Synthesis"):
-            # Restriction check matches the new string identifier configuration
             if selected_display != "Fenix 2.5 flash":
                 st.error("Under Development. Come Again or use Gemini 2.5 flash")
             else:
                 with st.spinner("Synthesizing logic layers..."):
                     try:
-                        if is_openai_selected:
-                            res = openai_client.chat.completions.create(model=selected_model, messages=[{"role": "system", "content": FENIX_IDENTITY}, {"role": "user", "content": f"Write {lang} code for: {query}"}])
-                            output_text = res.choices[0].message.content
-                        else:
-                            res = gemini_client.models.generate_content(model=selected_model, contents=f"Write {lang} code for: {query}")
-                            output_text = res.text
-                        st.code(output_text, language=lang.lower())
+                        res = groq_client.chat.completions.create(
+                            model=selected_model,
+                            messages=[{"role": "system", "content": FENIX_IDENTITY}, {"role": "user", "content": f"Write {lang} code for: {query}"}]
+                        )
+                        st.code(res.choices[0].message.content, language=lang.lower())
                     except Exception as e: st.error(f"Synthesis failed: {e}")
 
     elif st.session_state.page == "Chat":
@@ -257,15 +255,14 @@ else:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
                 
-                # Tiny, native sound corner trigger logo position layer on assistant cards
-                if msg["role"] == "assistant" and msg["content"] != "Under Development. Come Again or use Gemini 2.5 flash":
+                # Native audio triggers setup
+                if msg["role"] == "assistant" and "Under Development" not in msg["content"]:
                     st.markdown('<div class="corner-audio-wrapper">', unsafe_allow_html=True)
                     if st.button("🔊", key=f"audio_ico_{idx}", help="Stream audio"):
                         st.session_state.active_audio_track = idx
                         st.rerun()
                     st.markdown('</div>', unsafe_allow_html=True)
                     
-                    # Target player block deployment if selected by context action key index matrix
                     if st.session_state.active_audio_track == idx:
                         try:
                             tts = gTTS(text=msg["content"][:400], lang='en', slow=False)
@@ -279,20 +276,22 @@ else:
             if context_payload: prompt = f"{context_payload}\n\n[User Instructions]: {prompt}"
             st.session_state.messages.append({"role": "user", "content": prompt})
             
-            # BLOCK ACTION IF THE CUSTOM STRING SELECTOR IS NOT DIRECTLY SET TO FENIX 2.5 FLASH
+            # STRICT LABEL RESTRICTION SAFEGUARD
             if selected_display != "Fenix 2.5 flash":
                 st.session_state.messages.append({"role": "assistant", "content": "Under Development. Come Again or use Gemini 2.5 flash"})
                 st.rerun()
             else:
-                with st.spinner("Retrieving response..."):
+                with st.spinner("Retrieving response from unlimited pipeline..."):
                     try:
-                        if is_openai_selected:
-                            response = openai_client.chat.completions.create(model=selected_model, messages=[{"role": "system", "content": FENIX_IDENTITY}, {"role": "user", "content": prompt}])
-                            bot_response = response.choices[0].message.content
-                        else:
-                            response = gemini_client.models.generate_content(model=selected_model, config=types.GenerateContentConfig(system_instruction=FENIX_IDENTITY), contents=prompt)
-                            bot_response = response.text
-                            
+                        # Executing via high-limit Groq client core mapping architecture
+                        response = groq_client.chat.completions.create(
+                            model=selected_model,
+                            messages=[
+                                {"role": "system", "content": FENIX_IDENTITY},
+                                {"role": "user", "content": prompt}
+                            ]
+                        )
+                        bot_response = response.choices[0].message.content
                         st.session_state.messages.append({"role": "assistant", "content": bot_response})
                         
                         # Automate log data packaging tracker sequence if requested
@@ -310,9 +309,12 @@ else:
         if st.button("Render Spatial Grid"):
             with st.spinner("Constructing image arrays..."):
                 try:
-                    res = gemini_client.models.generate_content(model='gemini-2.5-flash-image', contents=p, config=types.GenerateContentConfig(response_modalities=["IMAGE"]))
-                    for part in res.candidates[0].content.parts:
-                        if part.inline_data: st.image(io.BytesIO(part.inline_data.data), use_container_width=True)
+                    if gemini_available:
+                        res = gemini_client.models.generate_content(model='gemini-2.5-flash-image', contents=p, config=types.GenerateContentConfig(response_modalities=["IMAGE"]))
+                        for part in res.candidates[0].content.parts:
+                            if part.inline_data: st.image(io.BytesIO(part.inline_data.data), use_container_width=True)
+                    else:
+                        st.error("Image generation requires a functional GEMINI_API_KEY inside secrets setup.")
                 except Exception as e: st.error(f"Renderer Fault: {e}")
 
     elif st.session_state.page == "See":
@@ -325,10 +327,11 @@ else:
                 if selected_display != "Fenix 2.5 flash":
                     st.error("Under Development. Come Again or use Gemini 2.5 flash")
                 else:
-                    with st.spinner("Processing..."):
+                    with st.spinner("Processing visual layers..."):
                         try:
-                            if is_openai_selected: st.warning("Switch to a Gemini core variant for native vision chains.")
-                            else:
-                                res = gemini_client.models.generate_content(model=selected_model, contents=["Analyze this image asset data meticulously:", img])
+                            if gemini_available:
+                                res = gemini_client.models.generate_content(model="gemini-2.5-flash", contents=["Analyze this image asset data meticulously:", img])
                                 st.write(res.text)
+                            else:
+                                st.warning("Vision layer analysis utilizes Gemini vision pipelines. Please ensure GEMINI_API_KEY is active.")
                         except Exception as e: st.error(e)
