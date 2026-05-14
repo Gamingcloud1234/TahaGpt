@@ -85,7 +85,7 @@ else:
         st.stop()
 
     client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
-    TAHA_IDENTITY = f"Your name is Fenix. Created by M. Taha Farooq for {st.session_state.current_user}."
+    FENIX_IDENTITY = f"Your name is Fenix. Created by M. Taha Farooq for {st.session_state.current_user}."
 
     # --- SIDEBAR UI ---
     with st.sidebar:
@@ -116,8 +116,14 @@ else:
         st.markdown("### 🤖 Model Settings")
         selected_model = st.selectbox(
             "Brain Engine",
-            ["gemini-2.0-flash", "gemini-2.0-pro-exp-02-05", "gemini-1.5-flash", "gemini-1.5-pro"],
-            index=0
+            [
+                "gemini-2.5-flash", 
+                "gemini-2.5-pro", 
+                "gemini-3-flash-preview", 
+                "gemini-2.0-flash"
+            ],
+            index=0,
+            help="Select the AI brain variant."
         )
 
         st.divider()
@@ -184,7 +190,7 @@ else:
             try:
                 response = client.models.generate_content(
                     model=selected_model,
-                    config=types.GenerateContentConfig(system_instruction=TAHA_IDENTITY),
+                    config=types.GenerateContentConfig(system_instruction=FENIX_IDENTITY),
                     contents=prompt
                 )
                 with st.chat_message("assistant"): st.markdown(response.text)
@@ -195,13 +201,18 @@ else:
         st.header("🎨 AI Image Generation")
         p = st.text_input("Describe the image:")
         if st.button("Generate"):
-            try:
-                # Image models usually have specific names
-                img_model = 'gemini-2.0-flash' if '2.0' in selected_model else 'gemini-1.5-flash'
-                res = client.models.generate_content(model=img_model, contents=p, config=types.GenerateContentConfig(response_modalities=["IMAGE"]))
-                for part in res.candidates[0].content.parts:
-                    if part.inline_data: st.image(Image.open(io.BytesIO(part.inline_data.data)), use_container_width=True)
-            except Exception as e: st.error(e)
+            with st.spinner("Generating Image..."):
+                try:
+                    # Map to the native image modal engine variant
+                    res = client.models.generate_content(
+                        model='gemini-2.5-flash-image', 
+                        contents=p, 
+                        config=types.GenerateContentConfig(response_modalities=["IMAGE"])
+                    )
+                    for part in res.candidates[0].content.parts:
+                        if part.inline_data: 
+                            st.image(io.BytesIO(part.inline_data.data), use_container_width=True)
+                except Exception as e: st.error(f"Generation error: {e}")
 
     elif st.session_state.page == "See":
         st.header("🖼️ Image Intelligence")
@@ -210,5 +221,8 @@ else:
             img = Image.open(uploaded_file)
             st.image(img, caption='Uploaded Image', use_container_width=True)
             if st.button("Analyze Image"):
-                res = client.models.generate_content(model=selected_model, contents=["Describe this image", img])
-                st.write(res.text)
+                with st.spinner("Analyzing..."):
+                    try:
+                        res = client.models.generate_content(model=selected_model, contents=["Describe this image", img])
+                        st.write(res.text)
+                    except Exception as e: st.error(e)
