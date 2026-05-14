@@ -1,5 +1,6 @@
-streamlit
-google-genai
-Pillow
-gTTS
-fpdf2
+streamlit>=1.35.0
+google-genai>=2.0.0
+openai>=1.20.0
+Pillow>=10.0.0
+gTTS>=2.5.0
+fpdf2>=2.7.0
