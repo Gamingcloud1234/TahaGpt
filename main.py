@@ -98,16 +98,15 @@ def show_auth_page():
 if not st.session_state.logged_in:
     show_auth_page()
 else:
-    # Verifying available credentials setup
     groq_available = "GROQ_API_KEY" in st.secrets
     gemini_available = "GEMINI_API_KEY" in st.secrets
 
-    if not groq_available:
-        st.error("⚠️ CRITICAL ERROR: Please provide GROQ_API_KEY in Streamlit secrets for unlimited processing.")
+    if not groq_available and not gemini_available:
+        st.error("⚠️ CRITICAL ERROR: Please provide GROQ_API_KEY or GEMINI_API_KEY in secrets.")
         st.stop()
 
-    # Initializing Cloud Clients
-    groq_client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+    # Client Initializations
+    groq_client = Groq(api_key=st.secrets["GROQ_API_KEY"]) if groq_available else None
     gemini_client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"]) if gemini_available else None
     
     # Injected strict tracking profile directives for location queries
@@ -119,7 +118,6 @@ else:
 
     # --- SIDEBAR COMPONENT CONSOLE ---
     with st.sidebar:
-        # URL case-matched perfectly to FullLogo.jpg path architecture
         cache_breaker_url = f"https://raw.githubusercontent.com/Gamingcloud1234/TahaGpt/main/FullLogo.jpg?v={int(time.time())}"
         try: 
             st.image(cache_breaker_url, width=90)
@@ -142,15 +140,21 @@ else:
 
         st.divider()
         
-        # --- INFRASTRUCTURE BRAIN DISPLAY MAP (GROQ DRIVEN) ---
-        # Remapping your exact same custom names to unlimited high-speed Groq models
+        # --- MODEL RE-MAPPING MATRIX ---
         model_display_map = {
-            "Fenix 2.5 flash": "llama-3.3-70b-specdec", # Unlimited high-speed production model
-            "fenix 2.0 [Under Dev]": "llama3-8b-8192",
+            "Fenix 2.5 flash pro": "llama-3.3-70b-versatile",  # High Limit Groq Backbone
+            "Fenix 2.5 flash": "gemini-2.5-flash",             # Native Gemini Backbone
+            "fenix 2.0 [Under Dev]": "llama-3.1-8b-instant",
             "Fenix 1 [Under Dev]": "mixtral-8x7b-32768"
         }
         
-        visible_options = ["Fenix 2.5 flash", "fenix 2.0 [Under Dev]", "Fenix 1 [Under Dev]"]
+        visible_options = []
+        if groq_available:
+            visible_options += ["Fenix 2.5 flash pro"]
+        if gemini_available:
+            visible_options += ["Fenix 2.5 flash"]
+            
+        visible_options += ["fenix 2.0 [Under Dev]", "Fenix 1 [Under Dev]"]
             
         selected_display = st.selectbox("Active Brain Core", visible_options, index=0)
         selected_model = model_display_map[selected_display]
@@ -218,16 +222,21 @@ else:
         query = st.text_input("Technical prompt specifications:")
         
         if st.button("Execute Code Synthesis"):
-            if selected_display != "Fenix 2.5 flash":
+            if selected_display not in ["Fenix 2.5 flash pro", "Fenix 2.5 flash"]:
                 st.error("Under Development. Come Again or use Gemini 2.5 flash")
             else:
                 with st.spinner("Synthesizing logic layers..."):
                     try:
-                        res = groq_client.chat.completions.create(
-                            model=selected_model,
-                            messages=[{"role": "system", "content": FENIX_IDENTITY}, {"role": "user", "content": f"Write {lang} code for: {query}"}]
-                        )
-                        st.code(res.choices[0].message.content, language=lang.lower())
+                        if selected_display == "Fenix 2.5 flash pro":
+                            res = groq_client.chat.completions.create(
+                                model=selected_model,
+                                messages=[{"role": "system", "content": FENIX_IDENTITY}, {"role": "user", "content": f"Write {lang} code for: {query}"}]
+                            )
+                            output_text = res.choices[0].message.content
+                        else:
+                            res = gemini_client.models.generate_content(model=selected_model, contents=f"Write {lang} code for: {query}")
+                            output_text = res.text
+                        st.code(output_text, language=lang.lower())
                     except Exception as e: st.error(f"Synthesis failed: {e}")
 
     elif st.session_state.page == "Chat":
@@ -255,7 +264,6 @@ else:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
                 
-                # Native audio triggers setup
                 if msg["role"] == "assistant" and "Under Development" not in msg["content"]:
                     st.markdown('<div class="corner-audio-wrapper">', unsafe_allow_html=True)
                     if st.button("🔊", key=f"audio_ico_{idx}", help="Stream audio"):
@@ -276,22 +284,33 @@ else:
             if context_payload: prompt = f"{context_payload}\n\n[User Instructions]: {prompt}"
             st.session_state.messages.append({"role": "user", "content": prompt})
             
-            # STRICT LABEL RESTRICTION SAFEGUARD
-            if selected_display != "Fenix 2.5 flash":
+            # SAFEGUARD ENFORCEMENT MATCHING NEW SELECTIONS
+            if selected_display not in ["Fenix 2.5 flash pro", "Fenix 2.5 flash"]:
                 st.session_state.messages.append({"role": "assistant", "content": "Under Development. Come Again or use Gemini 2.5 flash"})
                 st.rerun()
             else:
-                with st.spinner("Retrieving response from unlimited pipeline..."):
+                with st.spinner("Retrieving response..."):
                     try:
-                        # Executing via high-limit Groq client core mapping architecture
-                        response = groq_client.chat.completions.create(
-                            model=selected_model,
-                            messages=[
-                                {"role": "system", "content": FENIX_IDENTITY},
-                                {"role": "user", "content": prompt}
-                            ]
-                        )
-                        bot_response = response.choices[0].message.content
+                        # Route dynamically via Groq Client
+                        if selected_display == "Fenix 2.5 flash pro":
+                            response = groq_client.chat.completions.create(
+                                model=selected_model,
+                                messages=[
+                                    {"role": "system", "content": FENIX_IDENTITY},
+                                    {"role": "user", "content": prompt}
+                                ]
+                            )
+                            bot_response = response.choices[0].message.content
+                        
+                        # Route dynamically via Gemini Client
+                        else:
+                            response = gemini_client.models.generate_content(
+                                model=selected_model, 
+                                config=types.GenerateContentConfig(system_instruction=FENIX_IDENTITY), 
+                                contents=prompt
+                            )
+                            bot_response = response.text
+                            
                         st.session_state.messages.append({"role": "assistant", "content": bot_response})
                         
                         # Automate log data packaging tracker sequence if requested
@@ -314,7 +333,7 @@ else:
                         for part in res.candidates[0].content.parts:
                             if part.inline_data: st.image(io.BytesIO(part.inline_data.data), use_container_width=True)
                     else:
-                        st.error("Image generation requires a functional GEMINI_API_KEY inside secrets setup.")
+                        st.error("Image generation requires an active GEMINI_API_KEY in secrets.")
                 except Exception as e: st.error(f"Renderer Fault: {e}")
 
     elif st.session_state.page == "See":
@@ -324,14 +343,15 @@ else:
             img = Image.open(uploaded_file)
             st.image(img, caption='Active Workspace Element', use_container_width=True)
             if st.button("Initialize Deep Visual Processing"):
-                if selected_display != "Fenix 2.5 flash":
+                if selected_display not in ["Fenix 2.5 flash pro", "Fenix 2.5 flash"]:
                     st.error("Under Development. Come Again or use Gemini 2.5 flash")
                 else:
                     with st.spinner("Processing visual layers..."):
                         try:
                             if gemini_available:
+                                # Always drop onto Gemini for structural vision matrix operations
                                 res = gemini_client.models.generate_content(model="gemini-2.5-flash", contents=["Analyze this image asset data meticulously:", img])
                                 st.write(res.text)
                             else:
-                                st.warning("Vision layer analysis utilizes Gemini vision pipelines. Please ensure GEMINI_API_KEY is active.")
+                                st.warning("Vision layers utilize native Gemini hardware nodes. Please verify your GEMINI_API_KEY config.")
                         except Exception as e: st.error(e)
