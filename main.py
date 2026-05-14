@@ -110,8 +110,8 @@ else:
 
     # --- SIDEBAR COMPONENT CONSOLE ---
     with st.sidebar:
-        # Pushing direct raw tracking route targeting the Fulllogo.jpg asset architecture
-        cache_breaker_url = f"https://raw.githubusercontent.com/Gamingcloud1234/TahaGpt/main/Fulllogo.jpg?v={int(time.time())}"
+        # URL case-matched perfectly to FullLogo.jpg path architecture
+        cache_breaker_url = f"https://raw.githubusercontent.com/Gamingcloud1234/TahaGpt/main/FullLogo.jpg?v={int(time.time())}"
         try: 
             st.image(cache_breaker_url, width=90)
         except: 
