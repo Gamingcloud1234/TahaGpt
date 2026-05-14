@@ -9,16 +9,18 @@ import io
 import zipfile
 import os
 
-# --- 1. PREMIUM WHITE & COMPACT UI THEME ---
+# --- 1. PREMIUM COHESIVE SYSTEM THEME ---
 st.set_page_config(page_title="Fenix Pro", page_icon="🔥", layout="wide")
 
 st.markdown("""
     <style>
+        /* Core UI Reset */
         .stApp { background-color: #ffffff !important; color: #000000 !important; }
         [data-testid="stSidebar"] { background-color: #f8f9fa !important; border-right: 1px solid #eeeeee; }
         .stChatInput { border-radius: 24px !important; border: 1px solid #e0e0e0 !important; }
-        .stChatMessage { background-color: #f7f7f8; border-radius: 16px; margin-bottom: 12px; padding: 15px; }
+        .stChatMessage { background-color: #f7f7f8; border-radius: 16px; margin-bottom: 12px; padding: 15px; position: relative; }
         
+        /* Typography & Badges */
         .pro-header {
             background: linear-gradient(135deg, #FFD700, #FFA500);
             color: #000; padding: 10px; border-radius: 12px;
@@ -28,10 +30,13 @@ st.markdown("""
         .normal-header { text-align: center; font-size: 32px; font-weight: 800; margin-bottom: 20px; color: #ff4b4b; letter-spacing: -1px; }
         .pro-item-text { color: #B8860B; font-weight: bold; font-size: 14px; margin-top: 10px; }
         .stFileUploader { border: 1px dashed #cccccc !important; border-radius: 12px; background-color: #fafafa; }
+        
+        /* Ultra Mini Audio Button Alignment */
+        .audio-container { display: flex; justify-content: flex-end; margin-top: -5px; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. SESSION STATE MANAGEMENT ---
+# --- 2. SESSION LIFECYCLE MANAGEMENT ---
 if "users" not in st.session_state: st.session_state.users = {"admin": "taha123"}  
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
 if "current_user" not in st.session_state: st.session_state.current_user = ""
@@ -40,7 +45,7 @@ if "messages" not in st.session_state: st.session_state.messages = []
 if "page" not in st.session_state: st.session_state.page = "Chat"
 if "last_qa_text" not in st.session_state: st.session_state.last_qa_text = ""
 
-# --- 3. AUTHENTICATION PAGES ---
+# --- 3. AUTHENTICATION MODULE ---
 def show_auth_page():
     st.markdown("<div class='normal-header'>Fenix Access</div>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -67,7 +72,7 @@ def show_auth_page():
                         st.success("Account created! Please login.")
                 else: st.error("Please fill all fields.")
 
-# --- 4. MAIN PROGRAM CONTROLLER ---
+# --- 4. ENGINE CONTROLLER ---
 if not st.session_state.logged_in:
     show_auth_page()
 else:
@@ -75,15 +80,15 @@ else:
     openai_available = "OPENAI_API_KEY" in st.secrets
 
     if not gemini_available and not openai_available:
-        st.error("⚠️ CRITICAL ERROR: Provide API keys in Streamlit secrets.")
+        st.error("⚠️ CRITICAL ERROR: Provide API credentials in Streamlit secrets.")
         st.stop()
 
     gemini_client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"]) if gemini_available else None
     openai_client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"]) if openai_available else None
     
-    FENIX_IDENTITY = f"Your name is Fenix. You are an elite AI. Created by M. Taha Farooq for {st.session_state.current_user}."
+    FENIX_IDENTITY = f"Your name is Fenix. You are an elite AI system. Created by M. Taha Farooq for your user, {st.session_state.current_user}."
 
-    # --- SIDEBAR DESIGN ---
+    # --- SIDEBAR INTERFACE ---
     with st.sidebar:
         try: st.image("https://raw.githubusercontent.com/Gamingcloud1234/TahaGpt/main/Taha.jpeg", width=90)
         except: st.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=80)
@@ -103,14 +108,14 @@ else:
 
         st.divider()
         
-        # --- BRAIN CORE MULTI-SELECTOR ---
+        # --- INFRASTRUCTURE CORE SELECTOR ---
         models_list = []
         if gemini_available: models_list += ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"]
         if openai_available: models_list += ["gpt-4o-mini", "gpt-4o"]
         selected_model = st.selectbox("Active Brain Core", models_list, index=0)
         is_openai_selected = selected_model.startswith("gpt-")
 
-        # --- DYNAMIC EXPORT LOG ENGINE (ZIP) ---
+        # --- RUNTIME ARCHIVE COMPILER (ZIP Export) ---
         if st.session_state.last_qa_text:
             st.divider()
             st.markdown("### 🗂️ Export Package Available")
@@ -123,7 +128,7 @@ else:
         st.divider()
         st.caption("🔥 Fenix Ecosystem | Karachi 2026")
 
-        # --- PRO MEMBERSHIP ---
+        # --- PRO TIERS SYSTEM ---
         if not st.session_state.is_pro:
             with st.expander("💎 Upgrade to Fenix Pro"):
                 promo = st.text_input("Promo Code", key="promo_input")
@@ -144,15 +149,14 @@ else:
             st.session_state.current_user = ""
             st.rerun()
 
-    # --- TOP INTERFACE HEADER ---
+    # --- MAIN CANVAS ROUTER ---
     if st.session_state.is_pro: st.markdown('<div class="pro-header">✨ FENIX ELITE ARCHITECTURE PRO ✨</div>', unsafe_allow_html=True)
     else: st.markdown('<div class="normal-header">Fenix Architecture</div>', unsafe_allow_html=True)
 
-    # --- ROUTING ENGINE ---
     if st.session_state.page == "PDF_Mode":
         st.header("📄 Pro: Structured PDF Factory")
         pdf_title = st.text_input("Document Title", "Fenix Production Report")
-        content = st.text_area("Write plain text to compile into PDF document format:", height=200)
+        content = st.text_area("Write plain text to compile into PDF format:", height=200)
         if st.button("Compile & Build PDF"):
             if content:
                 pdf = FPDF()
@@ -162,7 +166,6 @@ else:
                 pdf.ln(15)
                 pdf.set_font("Helvetica", size=12)
                 pdf.multi_cell(0, 10, content)
-                
                 pdf_output = pdf.output()
                 st.success("PDF Compiled successfully!")
                 st.download_button(label="📥 Download PDF Document", data=bytes(pdf_output), file_name=f"{pdf_title.lower().replace(' ', '_')}.pdf", mime="application/pdf")
@@ -185,27 +188,9 @@ else:
                 except Exception as e: st.error(f"Synthesis failed: {e}")
 
     elif st.session_state.page == "Chat":
-        # Render Chat History
-        for idx, msg in enumerate(st.session_state.messages):
-            with st.chat_message(msg["role"]):
-                st.markdown(msg["content"])
-                
-                # Dynamic On-Demand Voice Corner Trigger
-                if msg["role"] == "assistant":
-                    audio_expander = st.expander("🔊 Listen to response", expanded=False)
-                    with audio_expander:
-                        try:
-                            # Standard text synthesis slice for immediate buffering speed
-                            tts = gTTS(text=msg["content"][:350], lang='en', slow=False)
-                            speech_buffer = io.BytesIO()
-                            tts.write_to_fp(speech_buffer)
-                            st.audio(speech_buffer, format="audio/mp3")
-                        except Exception:
-                            st.caption("Audio feed temporary down.")
-        
-        # --- MULTI-FILE PIPELINE HUB (+) ---
+        # Multi-file context container placement pipeline (+)
         with st.expander("➕ Attach Media, Scripts, Documentations or ZIP archives to context"):
-            uploaded_files = st.file_uploader("Drop elements into memory pipeline:", accept_multiple_files=True, type=["jpg", "jpeg", "png", "txt", "py", "pdf", "zip"])
+            uploaded_files = st.file_uploader("Drop elements into core memory pipeline:", accept_multiple_files=True, type=["jpg", "jpeg", "png", "txt", "py", "pdf", "zip"])
             context_payload = ""
             if uploaded_files:
                 for file in uploaded_files:
@@ -222,30 +207,63 @@ else:
                         context_payload += f"\n[File: {file.name}]:\n{file.read().decode('utf-8', errors='ignore')}\n"
                         st.success(f"Loaded script data: {file.name}")
 
-        if prompt := st.chat_input("Dispatch query instructions..."):
-            if context_payload: prompt = f"{context_payload}\n\n[User Instructions]: {prompt}"
-            st.session_state.messages.append({"role": "user", "content": prompt})
-            st.rerun() # Refresh layout interface state to instantly mount structural elements
+        # Live Chat Loop Rendering Canvas
+        for idx, msg in enumerate(st.session_state.messages):
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+                
+                # Sleek, hidden micro corner button layer for Text-To-Speech execution
+                if msg["role"] == "assistant":
+                    st.markdown('<div class="audio-container">', unsafe_allow_html=True)
+                    if st.button("🔊", key=f"audio_btn_{idx}", help="Listen to answer line stream"):
+                        try:
+                            tts = gTTS(text=msg["content"][:400], lang='en', slow=False)
+                            speech_buffer = io.BytesIO()
+                            tts.write_to_fp(speech_buffer)
+                            st.audio(speech_buffer, format="audio/mp3")
+                        except Exception: pass
+                    st.markdown('</div>', unsafe_allow_html=True)
 
+        # Dynamic Input Trigger Handler
+        if prompt := st.chat_input("Dispatch query instructions..."):
+            if context_payload: 
+                prompt = f"{context_payload}\n\n[User Instructions]: {prompt}"
+                
+            # Immediately commit user data injection array matrices
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            with st.chat_message("user"): 
+                st.markdown(prompt)
+            
+            # Synchronous Model Output Generation Processing Pipeline
             with st.spinner("Retrieving response..."):
                 try:
                     if is_openai_selected:
-                        response = openai_client.chat.completions.create(model=selected_model, messages=[{"role": "system", "content": FENIX_IDENTITY}, {"role": "user", "content": prompt}])
+                        response = openai_client.chat.completions.create(
+                            model=selected_model, 
+                            messages=[{"role": "system", "content": FENIX_IDENTITY}, {"role": "user", "content": prompt}]
+                        )
                         bot_response = response.choices[0].message.content
                     else:
-                        response = gemini_client.models.generate_content(model=selected_model, config=types.GenerateContentConfig(system_instruction=FENIX_IDENTITY), contents=prompt)
+                        response = gemini_client.models.generate_content(
+                            model=selected_model, 
+                            config=types.GenerateContentConfig(system_instruction=FENIX_IDENTITY), 
+                            contents=prompt
+                        )
                         bot_response = response.text
                         
+                    # Commit AI content response blocks to memory array metrics
                     st.session_state.messages.append({"role": "assistant", "content": bot_response})
                     
-                    # Pack tracking logic matrix if requested
+                    # Core check: ZIP packaging matrix deployment filter
                     trigger_words = ["zip", "save as zip", "convert to zip", "compress this"]
                     if any(word in prompt.lower() for word in trigger_words):
                         st.session_state.last_qa_text = f"--- CHAT LOG ARCHIVE ---\nUser:\n{prompt}\n\nFenix Output:\n{bot_response}"
                         st.sidebar.info("✨ Package compiled! Check left menu sidebar panel.")
-                    st.rerun()
+                    
+                    st.rerun() # Forces layout sync refresh layer to display freshly loaded arrays safely
                         
-                except Exception as e: st.error(f"Ecosystem Failure: {e}")
+                except Exception as e: 
+                    st.error(f"Ecosystem Execution Failure: {e}")
 
     elif st.session_state.page == "Draw":
         st.header("🎨 AI Generative Spatial Painter")
