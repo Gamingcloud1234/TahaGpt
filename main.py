@@ -201,17 +201,22 @@ else:
         st.header("💻 Pro: Advanced Coding Lab")
         lang = st.selectbox("Target Stack", ["Python", "JavaScript", "HTML/CSS", "Minecraft Skript"])
         query = st.text_input("Technical prompt specifications:")
+        
         if st.button("Execute Code Synthesis"):
-            with st.spinner("Synthesizing logic layers..."):
-                try:
-                    if is_openai_selected:
-                        res = openai_client.chat.completions.create(model=selected_model, messages=[{"role": "system", "content": FENIX_IDENTITY}, {"role": "user", "content": f"Write {lang} code for: {query}"}])
-                        output_text = res.choices[0].message.content
-                    else:
-                        res = gemini_client.models.generate_content(model=selected_model, contents=f"Write {lang} code for: {query}")
-                        output_text = res.text
-                    st.code(output_text, language=lang.lower())
-                except Exception as e: st.error(f"Synthesis failed: {e}")
+            # Core Block validation rule applied to secondary entry points
+            if selected_model != "gemini-2.5-flash":
+                st.error("Under Development. Come Again or use Gemini 2.5 flash")
+            else:
+                with st.spinner("Synthesizing logic layers..."):
+                    try:
+                        if is_openai_selected:
+                            res = openai_client.chat.completions.create(model=selected_model, messages=[{"role": "system", "content": FENIX_IDENTITY}, {"role": "user", "content": f"Write {lang} code for: {query}"}])
+                            output_text = res.choices[0].message.content
+                        else:
+                            res = gemini_client.models.generate_content(model=selected_model, contents=f"Write {lang} code for: {query}")
+                            output_text = res.text
+                        st.code(output_text, language=lang.lower())
+                    except Exception as e: st.error(f"Synthesis failed: {e}")
 
     elif st.session_state.page == "Chat":
         # --- MULTI-FILE PIPELINE ATTACHMENT HUB (+) ---
@@ -239,7 +244,7 @@ else:
                 st.markdown(msg["content"])
                 
                 # Tiny, native sound corner trigger logo position layer on assistant cards
-                if msg["role"] == "assistant":
+                if msg["role"] == "assistant" and msg["content"] != "Under Development. Come Again or use Gemini 2.5 flash":
                     st.markdown('<div class="corner-audio-wrapper">', unsafe_allow_html=True)
                     if st.button("🔊", key=f"audio_ico_{idx}", help="Stream audio"):
                         st.session_state.active_audio_track = idx
@@ -260,25 +265,30 @@ else:
             if context_payload: prompt = f"{context_payload}\n\n[User Instructions]: {prompt}"
             st.session_state.messages.append({"role": "user", "content": prompt})
             
-            with st.spinner("Retrieving response..."):
-                try:
-                    if is_openai_selected:
-                        response = openai_client.chat.completions.create(model=selected_model, messages=[{"role": "system", "content": FENIX_IDENTITY}, {"role": "user", "content": prompt}])
-                        bot_response = response.choices[0].message.content
-                    else:
-                        response = gemini_client.models.generate_content(model=selected_model, config=types.GenerateContentConfig(system_instruction=FENIX_IDENTITY), contents=prompt)
-                        bot_response = response.text
+            # CRITICAL EVALUATION LAYER FOR MODEL RESTRICTIONS
+            if selected_model != "gemini-2.5-flash":
+                st.session_state.messages.append({"role": "assistant", "content": "Under Development. Come Again or use Gemini 2.5 flash"})
+                st.rerun()
+            else:
+                with st.spinner("Retrieving response..."):
+                    try:
+                        if is_openai_selected:
+                            response = openai_client.chat.completions.create(model=selected_model, messages=[{"role": "system", "content": FENIX_IDENTITY}, {"role": "user", "content": prompt}])
+                            bot_response = response.choices[0].message.content
+                        else:
+                            response = gemini_client.models.generate_content(model=selected_model, config=types.GenerateContentConfig(system_instruction=FENIX_IDENTITY), contents=prompt)
+                            bot_response = response.text
+                            
+                        st.session_state.messages.append({"role": "assistant", "content": bot_response})
                         
-                    st.session_state.messages.append({"role": "assistant", "content": bot_response})
-                    
-                    # Automate log data packaging tracker sequence if requested
-                    trigger_words = ["zip", "save as zip", "convert to zip", "compress this"]
-                    if any(word in prompt.lower() for word in trigger_words):
-                        st.session_state.last_qa_text = f"--- CHAT LOG ARCHIVE ---\nUser:\n{prompt}\n\nFenix Output:\n{bot_response}"
-                        st.sidebar.info("✨ Package compiled! Check left menu sidebar panel.")
-                    st.rerun()
-                        
-                except Exception as e: st.error(f"Ecosystem Failure: {e}")
+                        # Automate log data packaging tracker sequence if requested
+                        trigger_words = ["zip", "save as zip", "convert to zip", "compress this"]
+                        if any(word in prompt.lower() for word in trigger_words):
+                            st.session_state.last_qa_text = f"--- CHAT LOG ARCHIVE ---\nUser:\n{prompt}\n\nFenix Output:\n{bot_response}"
+                            st.sidebar.info("✨ Package compiled! Check left menu sidebar panel.")
+                        st.rerun()
+                            
+                    except Exception as e: st.error(f"Ecosystem Failure: {e}")
 
     elif st.session_state.page == "Draw":
         st.header("🎨 AI Generative Spatial Painter")
@@ -298,10 +308,13 @@ else:
             img = Image.open(uploaded_file)
             st.image(img, caption='Active Workspace Element', use_container_width=True)
             if st.button("Initialize Deep Visual Processing"):
-                with st.spinner("Processing..."):
-                    try:
-                        if is_openai_selected: st.warning("Switch to a Gemini core variant for native vision chains.")
-                        else:
-                            res = gemini_client.models.generate_content(model=selected_model, contents=["Analyze this image asset data meticulously:", img])
-                            st.write(res.text)
-                    except Exception as e: st.error(e)
+                if selected_model != "gemini-2.5-flash":
+                    st.error("Under Development. Come Again or use Gemini 2.5 flash")
+                else:
+                    with st.spinner("Processing..."):
+                        try:
+                            if is_openai_selected: st.warning("Switch to a Gemini core variant for native vision chains.")
+                            else:
+                                res = gemini_client.models.generate_content(model=selected_model, contents=["Analyze this image asset data meticulously:", img])
+                                st.write(res.text)
+                        except Exception as e: st.error(e)
