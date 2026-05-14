@@ -135,7 +135,7 @@ else:
         
         # --- INFRASTRUCTURE BRAIN MULTI-SELECTOR ---
         models_list = []
-        if gemini_available: models_list += ["Gemini-2.5-flash", "Fenix-2.5-pro", "Fenix-2.0-flash"]
+        if gemini_available: models_list += ["Fenix-2.5-flash", "Fenix-2.5-pro", "Fenix-2.0-flash"]
         if openai_available: models_list += ["Fenix-mini", "Fenix-4o"]
         selected_model = st.selectbox("Active Brain Core", models_list, index=0)
         is_openai_selected = selected_model.startswith("gpt-")
