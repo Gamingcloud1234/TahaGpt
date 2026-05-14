@@ -133,11 +133,25 @@ else:
 
         st.divider()
         
-        # --- INFRASTRUCTURE BRAIN MULTI-SELECTOR ---
-        models_list = []
-        if gemini_available: models_list += ["Gemini-2.5-flash", "Fenix-2.5-pro", "Fenix-2.0-flash"]
-        if openai_available: models_list += ["Fenix-mini", "Fenix-4o"]
-        selected_model = st.selectbox("Active Brain Core", models_list, index=0)
+        # --- INFRASTRUCTURE BRAIN DISPLAY MAP ---
+        # Masking display values so the bar says "Fenix" instead of raw technical names
+        model_display_map = {
+            "Fenix": "gemini-2.5-flash",
+            "Gemini 2.5 Pro [Under Dev]": "gemini-2.5-pro",
+            "Gemini 2.0 Flash [Under Dev]": "gemini-2.0-flash",
+            "GPT-4o-Mini [Under Dev]": "gpt-4o-mini",
+            "GPT-4o [Under Dev]": "gpt-4o"
+        }
+        
+        # Filter map options based on available environment credentials
+        visible_options = []
+        if gemini_available:
+            visible_options += ["Fenix", "Gemini 2.5 Pro [Under Dev]", "Gemini 2.0 Flash [Under Dev]"]
+        if openai_available:
+            visible_options += ["GPT-4o-Mini [Under Dev]", "GPT-4o [Under Dev]"]
+            
+        selected_display = st.selectbox("Active Brain Core", visible_options, index=0)
+        selected_model = model_display_map[selected_display]
         is_openai_selected = selected_model.startswith("gpt-")
 
         # --- DYNAMIC EXPORT LOG COMPILER (ZIP) ---
@@ -203,8 +217,8 @@ else:
         query = st.text_input("Technical prompt specifications:")
         
         if st.button("Execute Code Synthesis"):
-            # Core Block validation rule applied to secondary entry points
-            if selected_model != "gemini-2.5-flash":
+            # Evaluation restriction targeting any display key that isn't core Fenix
+            if selected_display != "Fenix":
                 st.error("Under Development. Come Again or use Gemini 2.5 flash")
             else:
                 with st.spinner("Synthesizing logic layers..."):
@@ -265,8 +279,8 @@ else:
             if context_payload: prompt = f"{context_payload}\n\n[User Instructions]: {prompt}"
             st.session_state.messages.append({"role": "user", "content": prompt})
             
-            # CRITICAL EVALUATION LAYER FOR MODEL RESTRICTIONS
-            if selected_model != "gemini-2.5-flash":
+            # BLOCK ACTION IF THE MASKED SELECTOR IS NOT DIRECTLY SET TO FENIX
+            if selected_display != "Fenix":
                 st.session_state.messages.append({"role": "assistant", "content": "Under Development. Come Again or use Gemini 2.5 flash"})
                 st.rerun()
             else:
@@ -308,7 +322,7 @@ else:
             img = Image.open(uploaded_file)
             st.image(img, caption='Active Workspace Element', use_container_width=True)
             if st.button("Initialize Deep Visual Processing"):
-                if selected_model != "gemini-2.5-flash":
+                if selected_display != "Fenix":
                     st.error("Under Development. Come Again or use Gemini 2.5 flash")
                 else:
                     with st.spinner("Processing..."):
