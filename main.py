@@ -134,19 +134,19 @@ else:
         st.divider()
         
         # --- INFRASTRUCTURE BRAIN DISPLAY MAP ---
-        # Masking display values so the bar says "Fenix" instead of raw technical names
+        # Complete renaming architecture mapped back to functional backend cores
         model_display_map = {
-            "Fenix": "gemini-2.5-flash",
-            "Gemini 2.5 Pro [Under Dev]": "gemini-2.5-pro",
-            "Gemini 2.0 Flash [Under Dev]": "gemini-2.0-flash",
+            "Fenix 2.5 flash": "gemini-2.5-flash",
+            "fenix 2.0 [Under Dev]": "gemini-2.0-flash",
+            "Fenix 1 [Under Dev]": "gemini-2.5-pro",
             "GPT-4o-Mini [Under Dev]": "gpt-4o-mini",
             "GPT-4o [Under Dev]": "gpt-4o"
         }
         
-        # Filter map options based on available environment credentials
+        # Filter visibility arrays based on active pipeline key assets
         visible_options = []
         if gemini_available:
-            visible_options += ["Fenix", "Gemini 2.5 Pro [Under Dev]", "Gemini 2.0 Flash [Under Dev]"]
+            visible_options += ["Fenix 2.5 flash", "fenix 2.0 [Under Dev]", "Fenix 1 [Under Dev]"]
         if openai_available:
             visible_options += ["GPT-4o-Mini [Under Dev]", "GPT-4o [Under Dev]"]
             
@@ -217,8 +217,8 @@ else:
         query = st.text_input("Technical prompt specifications:")
         
         if st.button("Execute Code Synthesis"):
-            # Evaluation restriction targeting any display key that isn't core Fenix
-            if selected_display != "Fenix":
+            # Restriction check matches the new string identifier configuration
+            if selected_display != "Fenix 2.5 flash":
                 st.error("Under Development. Come Again or use Gemini 2.5 flash")
             else:
                 with st.spinner("Synthesizing logic layers..."):
@@ -279,8 +279,8 @@ else:
             if context_payload: prompt = f"{context_payload}\n\n[User Instructions]: {prompt}"
             st.session_state.messages.append({"role": "user", "content": prompt})
             
-            # BLOCK ACTION IF THE MASKED SELECTOR IS NOT DIRECTLY SET TO FENIX
-            if selected_display != "Fenix":
+            # BLOCK ACTION IF THE CUSTOM STRING SELECTOR IS NOT DIRECTLY SET TO FENIX 2.5 FLASH
+            if selected_display != "Fenix 2.5 flash":
                 st.session_state.messages.append({"role": "assistant", "content": "Under Development. Come Again or use Gemini 2.5 flash"})
                 st.rerun()
             else:
@@ -322,7 +322,7 @@ else:
             img = Image.open(uploaded_file)
             st.image(img, caption='Active Workspace Element', use_container_width=True)
             if st.button("Initialize Deep Visual Processing"):
-                if selected_display != "Fenix":
+                if selected_display != "Fenix 2.5 flash":
                     st.error("Under Development. Come Again or use Gemini 2.5 flash")
                 else:
                     with st.spinner("Processing..."):
