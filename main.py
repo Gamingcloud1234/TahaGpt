@@ -185,8 +185,23 @@ else:
                 except Exception as e: st.error(f"Synthesis failed: {e}")
 
     elif st.session_state.page == "Chat":
-        for msg in st.session_state.messages:
-            with st.chat_message(msg["role"]): st.markdown(msg["content"])
+        # Render Chat History
+        for idx, msg in enumerate(st.session_state.messages):
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+                
+                # Dynamic On-Demand Voice Corner Trigger
+                if msg["role"] == "assistant":
+                    audio_expander = st.expander("🔊 Listen to response", expanded=False)
+                    with audio_expander:
+                        try:
+                            # Standard text synthesis slice for immediate buffering speed
+                            tts = gTTS(text=msg["content"][:350], lang='en', slow=False)
+                            speech_buffer = io.BytesIO()
+                            tts.write_to_fp(speech_buffer)
+                            st.audio(speech_buffer, format="audio/mp3")
+                        except Exception:
+                            st.caption("Audio feed temporary down.")
         
         # --- MULTI-FILE PIPELINE HUB (+) ---
         with st.expander("➕ Attach Media, Scripts, Documentations or ZIP archives to context"):
@@ -210,8 +225,8 @@ else:
         if prompt := st.chat_input("Dispatch query instructions..."):
             if context_payload: prompt = f"{context_payload}\n\n[User Instructions]: {prompt}"
             st.session_state.messages.append({"role": "user", "content": prompt})
-            with st.chat_message("user"): st.markdown(prompt)
-            
+            st.rerun() # Refresh layout interface state to instantly mount structural elements
+
             with st.spinner("Retrieving response..."):
                 try:
                     if is_openai_selected:
@@ -221,24 +236,14 @@ else:
                         response = gemini_client.models.generate_content(model=selected_model, config=types.GenerateContentConfig(system_instruction=FENIX_IDENTITY), contents=prompt)
                         bot_response = response.text
                         
-                    with st.chat_message("assistant"):
-                        st.markdown(bot_response)
-                        # --- NATIVE TEXT-TO-SPEECH LAYER (gTTS) ---
-                        try:
-                            tts = gTTS(text=bot_response[:300], lang='en', slow=False) # Limit to first 300 chars for extreme speed
-                            speech_buffer = io.BytesIO()
-                            tts.write_to_fp(speech_buffer)
-                            st.audio(speech_buffer, format="audio/mp3")
-                        except Exception as tts_err: pass
-
                     st.session_state.messages.append({"role": "assistant", "content": bot_response})
                     
-                    # Core check: Pack tracking log matrix if requested
+                    # Pack tracking logic matrix if requested
                     trigger_words = ["zip", "save as zip", "convert to zip", "compress this"]
                     if any(word in prompt.lower() for word in trigger_words):
                         st.session_state.last_qa_text = f"--- CHAT LOG ARCHIVE ---\nUser:\n{prompt}\n\nFenix Output:\n{bot_response}"
                         st.sidebar.info("✨ Package compiled! Check left menu sidebar panel.")
-                        st.rerun()
+                    st.rerun()
                         
                 except Exception as e: st.error(f"Ecosystem Failure: {e}")
 
