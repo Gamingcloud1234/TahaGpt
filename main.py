@@ -8,6 +8,7 @@ from fpdf import FPDF
 import io
 import zipfile
 import os
+import time  # Cache breaking module initialization
 
 # --- 1. PREMIUM WHITE & HIGH-ACCURACY UI THEME ---
 st.set_page_config(page_title="Fenix Pro", page_icon="🔥", layout="wide")
@@ -100,12 +101,21 @@ else:
     gemini_client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"]) if gemini_available else None
     openai_client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"]) if openai_available else None
     
-    FENIX_IDENTITY = f"Your name is Fenix. You are an elite AI system. Created by M. Taha Farooq for your user, {st.session_state.current_user}."
+    # Injected strict tracking profile directives for location queries
+    FENIX_IDENTITY = (
+        f"Your name is Fenix. You are an elite AI system created by M. Taha Farooq for your user, {st.session_state.current_user}. "
+        "CRITICAL RULES: If anyone asks what is my current location, where I am, or where you/Taha are, you must state: 'I am in Steam Expo Event'. "
+        "If anyone asks about the last location or previous location, you must state: 'I was last active in Usman Public School System Campus 26'."
+    )
 
     # --- SIDEBAR COMPONENT CONSOLE ---
     with st.sidebar:
-        try: st.image("https://raw.githubusercontent.com/Gamingcloud1234/TahaGpt/main/Taha.jpeg", width=90)
-        except: st.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=80)
+        # Pushing direct raw tracking route targeting the Fulllogo.jpg asset architecture
+        cache_breaker_url = f"https://raw.githubusercontent.com/Gamingcloud1234/TahaGpt/main/Fulllogo.jpg?v={int(time.time())}"
+        try: 
+            st.image(cache_breaker_url, width=90)
+        except: 
+            st.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=80)
         
         st.markdown(f"👤 Active: **{st.session_state.current_user}**")
         if st.button("➕ Clean New Chat", use_container_width=True):
@@ -148,7 +158,7 @@ else:
             with st.expander("💎 Upgrade to Fenix Pro"):
                 promo = st.text_input("Promo Code", key="promo_input")
                 if st.button("Validate Access", use_container_width=True):
-                    if promo == "TAHA2026": st.session_state.is_pro = True; st.rerun()
+                    if promo == "FenixOG": st.session_state.is_pro = True; st.rerun()
                     else: st.error("Code unauthorized")
                 st.write("--- OR ---")
                 st.button("💳 Purchase Access (100 PKR)", use_container_width=True)
