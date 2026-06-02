@@ -1,4 +1,13 @@
 import streamlit as st
+import streamlit.components.v1 as components  # Required for AdSense injection
+
+# --- 1. ADS.TXT CRAWLER INTERCEPTOR ---
+# This intercepts Google's automated bots to clear the "ads.txt not found" error.
+# Replace the placeholder line below with the exact text from your AdSense dashboard!
+if st.query_params.get("page") == "ads.txt" or "ads.txt" in st.get_requests_path():
+    st.text("google.com, pub-XXXXXXXXXXXXXXXX, DIRECT, f08c47fec0942fa0")
+    st.stop()
+
 from google import genai
 from google.genai import types
 from openai import OpenAI
@@ -9,7 +18,6 @@ import io
 import zipfile
 import os
 import time  # Cache breaking module initialization
-import streamlit.components.v1 as components  # Required for AdSense injection
 
 # Try importing groq natively, provide explicit error handling if not installed
 try:
@@ -18,7 +26,7 @@ except ImportError:
     st.error("Please add 'groq' to your requirements.txt or run: pip install groq")
     st.stop()
 
-# --- 1. PREMIUM WHITE & HIGH-ACCURACY UI THEME ---
+# --- 2. PREMIUM WHITE & HIGH-ACCURACY UI THEME ---
 st.set_page_config(page_title="Fenix Pro", page_icon="🔥", layout="wide")
 
 st.markdown("""
@@ -58,8 +66,8 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- ADSENSE REUSABLE BLOCKS ---
-# Replace ca-pub-XXXXXXXXXXXXXXXX and data-ad-slot codes with your real AdSense variables.
+# --- 3. ADSENSE CONFIGURATION MATRIX ---
+# Update ca-pub-XXXXXXXXXXXXXXXX and data-ad-slot with your real AdSense identification IDs.
 ADSENSE_CODE = """
 <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXXXXXXXXXX"
      crossorigin="anonymous"></script>
@@ -74,7 +82,7 @@ ADSENSE_CODE = """
 </script>
 """
 
-# --- 2. LIFECYCLE MEMORY MATRIX ---
+# --- 4. LIFECYCLE MEMORY MATRIX ---
 if "users" not in st.session_state: st.session_state.users = {"admin": "taha123"}  
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
 if "current_user" not in st.session_state: st.session_state.current_user = ""
@@ -84,7 +92,7 @@ if "page" not in st.session_state: st.session_state.page = "Chat"
 if "last_qa_text" not in st.session_state: st.session_state.last_qa_text = ""
 if "active_audio_track" not in st.session_state: st.session_state.active_audio_track = None
 
-# --- 3. SECURITY GATEWAY ENTRY ---
+# --- 5. SECURITY GATEWAY ENTRY ---
 def show_auth_page():
     st.markdown("<div class='normal-header'>Fenix Access</div>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -111,7 +119,7 @@ def show_auth_page():
                         st.success("Account created! Please login.")
                 else: st.error("Please fill all fields.")
 
-# --- 4. ENGINE CONTROLLER RUNTIME ---
+# --- 6. ENGINE CONTROLLER RUNTIME ---
 if not st.session_state.logged_in:
     show_auth_page()
 else:
@@ -210,9 +218,9 @@ else:
             st.session_state.current_user = ""
             st.rerun()
 
-        # --- PLACEMENT 1: SIDEBAR ADSENSE BANNER ---
-        st.caption("Sponsor Advertisement")
-        components.html(ADSENSE_CODE, height=250)
+        # --- ADSENSE SIDEBAR PLACEMENT ---
+        st.caption("Advertisement Portfolio")
+        components.html(ADSENSE_CODE, height=240)
 
     # --- TOP MAIN HEADER ---
     if st.session_state.is_pro: st.markdown('<div class="pro-header">✨ FENIX ELITE ARCHITECTURE PRO ✨</div>', unsafe_allow_html=True)
@@ -343,9 +351,9 @@ else:
                             
                     except Exception as e: st.error(f"Ecosystem Failure: {e}")
 
-        # --- PLACEMENT 2: CHAT INTERFACE FOOTER ADSENSE BANNER ---
+        # --- ADSENSE CHAT INTERFACE FOOTER PLACEMENT ---
         st.write("---")
-        components.html(ADSENSE_CODE, height=150)
+        components.html(ADSENSE_CODE, height=140)
 
     elif st.session_state.page == "Draw":
         st.header("🎨 AI Generative Spatial Painter")
