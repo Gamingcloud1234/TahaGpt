@@ -3,7 +3,6 @@ import streamlit.components.v1 as components  # Required for AdSense injection
 
 # --- 1. ADS.TXT CRAWLER INTERCEPTOR ---
 # Access this via: https://yourwebsite.com/?page=ads.txt
-# Configured with your official AdSense Publisher ID
 if st.query_params.get("page") == "ads.txt":
     st.text("google.com, pub-4497729916962374, DIRECT, f08c47fec0942fa0")
     st.stop()
@@ -28,6 +27,14 @@ except ImportError:
 
 # --- 2. PREMIUM WHITE & HIGH-ACCURACY UI THEME ---
 st.set_page_config(page_title="Fenix Pro", page_icon="🔥", layout="wide")
+
+# --- META TAG INJECTION SYSTEM ---
+# Injects your direct verification meta tag into the dynamic DOM head
+st.html("""
+    <head>
+        <meta name="google-adsense-account" content="ca-pub-4497729916962374">
+    </head>
+""")
 
 st.markdown("""
     <style>
@@ -67,7 +74,6 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # --- 3. ADSENSE CONFIGURATION MATRIX ---
-# Fully configured with your official Publisher ID: ca-pub-4497729916962374
 ADSENSE_CODE = """
 <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4497729916962374"
      crossorigin="anonymous"></script>
