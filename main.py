@@ -389,4 +389,3 @@ else:
                                 st.warning("Vision layers utilize native Gemini hardware nodes. Please verify your GEMINI_API_KEY config.")
                         except Exception as e: st.error(e)
 
-```
