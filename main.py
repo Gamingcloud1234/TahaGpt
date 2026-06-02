@@ -1,8 +1,3 @@
-Here is your complete, error-free `main.py` code using **only native Streamlit features**. The broken function has been removed, and the `ads.txt` routing has been corrected.
-
-You can verify it works by visiting `https://your-app.streamlit.app/?page=ads.txt` once it is deployed.
-
-```python
 import streamlit as st
 import streamlit.components.v1 as components  # Required for AdSense injection
 
