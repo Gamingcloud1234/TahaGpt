@@ -9,6 +9,7 @@ import io
 import zipfile
 import os
 import time  # Cache breaking module initialization
+import streamlit.components.v1 as components  # Required for AdSense injection
 
 # Try importing groq natively, provide explicit error handling if not installed
 try:
@@ -56,6 +57,22 @@ st.markdown("""
         }
     </style>
     """, unsafe_allow_html=True)
+
+# --- ADSENSE REUSABLE BLOCKS ---
+# Replace ca-pub-XXXXXXXXXXXXXXXX and data-ad-slot codes with your real AdSense variables.
+ADSENSE_CODE = """
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXXXXXXXXXX"
+     crossorigin="anonymous"></script>
+<ins class="adsbygoogle"
+     style="display:block"
+     data-ad-client="ca-pub-XXXXXXXXXXXXXXXX"
+     data-ad-slot="XXXXXXXXXX"
+     data-ad-format="auto"
+     data-full-width-responsive="true"></ins>
+<script>
+     (adsbygoogle = window.adsbygoogle || []).push({});
+</script>
+"""
 
 # --- 2. LIFECYCLE MEMORY MATRIX ---
 if "users" not in st.session_state: st.session_state.users = {"admin": "taha123"}  
@@ -143,7 +160,7 @@ else:
         # --- MODEL RE-MAPPING MATRIX ---
         model_display_map = {
             "Fenix 2.5 flash pro": "llama-3.3-70b-versatile",  # High Limit Groq Backbone
-            "Fenix 2.5 flash": "gemini-2.5-flash",             # Native Gemini Backbone
+            "Fenix 2.5 flash": "gemini-2.5-flash",              # Native Gemini Backbone
             "fenix 2.0 [Under Dev]": "llama-3.1-8b-instant",
             "Fenix 1 [Under Dev]": "mixtral-8x7b-32768"
         }
@@ -192,6 +209,10 @@ else:
             st.session_state.logged_in = False
             st.session_state.current_user = ""
             st.rerun()
+
+        # --- PLACEMENT 1: SIDEBAR ADSENSE BANNER ---
+        st.caption("Sponsor Advertisement")
+        components.html(ADSENSE_CODE, height=250)
 
     # --- TOP MAIN HEADER ---
     if st.session_state.is_pro: st.markdown('<div class="pro-header">✨ FENIX ELITE ARCHITECTURE PRO ✨</div>', unsafe_allow_html=True)
@@ -321,6 +342,10 @@ else:
                         st.rerun()
                             
                     except Exception as e: st.error(f"Ecosystem Failure: {e}")
+
+        # --- PLACEMENT 2: CHAT INTERFACE FOOTER ADSENSE BANNER ---
+        st.write("---")
+        components.html(ADSENSE_CODE, height=150)
 
     elif st.session_state.page == "Draw":
         st.header("🎨 AI Generative Spatial Painter")
