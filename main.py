@@ -14,14 +14,13 @@ from fpdf import FPDF
 DB_FILE = "fenix_ai.db"
 if os.path.exists(DB_FILE):
     try:
-        # We check if an old broken user exists; if so, clear the DB to avoid bad data crashes
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM users LIMIT 1")
         row = cursor.fetchone()
         if row and not str(row[2]).startswith('$2b$'):
             conn.close()
-            os.remove(DB_FILE) # Safe reset for the user fix
+            os.remove(DB_FILE)
     except Exception:
         pass
 
@@ -65,7 +64,7 @@ def init_db():
                 FOREIGN KEY(conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
             )
         """)
-        # Settings Table - Changed default to 'light'
+        # Settings Table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS settings (
                 user_id INTEGER PRIMARY KEY,
@@ -73,6 +72,8 @@ def init_db():
                 default_model TEXT DEFAULT 'gemini-1.5-flash',
                 api_key_gemini TEXT,
                 api_key_groq TEXT,
+                is_pro INTEGER DEFAULT 0,
+                custom_sys_prompt TEXT DEFAULT '',
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
             )
         """)
@@ -87,20 +88,17 @@ def register_user(username, password):
     if len(password) < 6:
         return False, "Password must be at least 6 characters long."
     
-    # Correctly hash the incoming password
     hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
     now = datetime.now().isoformat()
     
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            # FIXED: Passing 'hashed' here instead of the username wrapper bundle
             cursor.execute(
                 "INSERT INTO users (username, password, created_at) VALUES (?, ?, ?)",
                 (bundle_input(username), hashed, now)
             )
             user_id = cursor.lastrowid
-            # Seed default settings as light mode
             cursor.execute(
                 "INSERT INTO settings (user_id, theme) VALUES (?, 'light')",
                 (user_id,)
@@ -117,7 +115,6 @@ def authenticate_user(username, password):
         user = cursor.fetchone()
         if user:
             db_password = user['password']
-            # Safeguard type checking before bcrypt validation execution
             if isinstance(db_password, str):
                 db_password = db_password.encode('utf-8')
             if bcrypt.checkpw(password.encode('utf-8'), db_password):
@@ -135,16 +132,16 @@ def get_user_settings(user_id):
         row = cursor.fetchone()
         if row:
             return dict(row)
-    return {"theme": "light", "default_model": "gemini-1.5-flash", "api_key_gemini": "", "api_key_groq": ""}
+    return {"theme": "light", "default_model": "gemini-1.5-flash", "api_key_gemini": "", "api_key_groq": "", "is_pro": 0, "custom_sys_prompt": ""}
 
-def update_user_settings(user_id, theme, default_model, api_key_gemini, api_key_groq):
+def update_user_settings(user_id, theme, default_model, api_key_gemini, api_key_groq, is_pro, custom_sys_prompt):
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
             UPDATE settings 
-            SET theme = ?, default_model = ?, api_key_gemini = ?, api_key_groq = ?
+            SET theme = ?, default_model = ?, api_key_gemini = ?, api_key_groq = ?, is_pro = ?, custom_sys_prompt = ?
             WHERE user_id = ?
-        """, (theme, default_model, api_key_gemini, api_key_groq, user_id))
+        """, (theme, default_model, api_key_gemini, api_key_groq, is_pro, custom_sys_prompt, user_id))
         conn.commit()
 
 def update_user_profile(user_id, password=None, avatar=None):
@@ -183,14 +180,6 @@ def create_conversation(conversation_id, user_id, title):
             INSERT INTO conversations (id, user_id, title, updated_at)
             VALUES (?, ?, ?, ?)
         """, (conversation_id, user_id, title, now))
-        conn.commit()
-
-def rename_conversation(conversation_id, new_title):
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("""
-            UPDATE conversations SET title = ? WHERE id = ?
-        """, (new_title, conversation_id))
         conn.commit()
 
 def delete_conversation(conversation_id):
@@ -353,7 +342,7 @@ def export_to_zip(messages):
 if 'user' not in st.session_state:
     st.session_state.user = None
 if 'settings' not in st.session_state:
-    st.session_state.settings = {"theme": "light"} # Instantly default to white light layout setup
+    st.session_state.settings = {"theme": "light", "is_pro": 0, "custom_sys_prompt": ""}
 if 'current_conversation_id' not in st.session_state:
     st.session_state.current_conversation_id = None
 if 'uploaded_file_context' not in st.session_state:
@@ -381,17 +370,18 @@ def apply_theme_styles():
             </style>
         """, unsafe_allow_html=True)
     else:
-        # WHITE LIGHT MODE THEME
+        # PURE WHITE INTERFACE PALETTE
         st.markdown("""
             <style>
-                html, body, [data-testid="stAppViewContainer"] { background-color: #ffffff; color: #191919; }
-                [data-testid="stSidebar"] { background-color: #f9f9f9 !important; }
-                div.stButton > button { background-color: #ffffff; color: #191919; border: 1px solid #e5e5e5; border-radius: 6px; }
-                div.stButton > button:hover { background-color: #f2f2f2; }
-                .chat-msg-user { background-color: #ffffff; padding: 15px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #e5e5e5; }
-                .chat-msg-assistant { background-color: #f7f7f8; padding: 15px; border-radius: 8px; margin-bottom: 10px; border-left: 3px solid #10a37f; border: 1px solid #e5e5e5; }
-                code { background-color: #f1f1f1 !important; color: #c41d7f !important; }
-                label, p, span, h1, h2, h3, h4 { color: #191919 !important; }
+                html, body, [data-testid="stAppViewContainer"] { background-color: #ffffff; color: #111111; }
+                [data-testid="stSidebar"] { background-color: #f8f9fa !important; border-right: 1px solid #eaeaea; }
+                div.stButton > button { background-color: #ffffff; color: #111111; border: 1px solid #dcdcdc; border-radius: 6px; font-weight: 500; }
+                div.stButton > button:hover { background-color: #f1f3f5; border-color: #b1b1b1; }
+                .chat-msg-user { background-color: #ffffff; padding: 16px; border-radius: 8px; margin-bottom: 12px; border: 1px solid #e9ecef; box-shadow: 0 1px 2px rgba(0,0,0,0.02); }
+                .chat-msg-assistant { background-color: #f8f9fa; padding: 16px; border-radius: 8px; margin-bottom: 12px; border: 1px solid #e9ecef; border-left: 4px solid #0052cc; }
+                code { background-color: #f1f3f5 !important; color: #d63384 !important; font-family: monospace; padding: 2px 6px; border-radius: 4px; }
+                label, p, span, h1, h2, h3, h4, h5 { color: #111111 !important; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+                .pro-badge { background: linear-gradient(45deg, #fe8c00, #f83600); color: white !important; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; display: inline-block; }
             </style>
         """, unsafe_allow_html=True)
 
@@ -434,13 +424,20 @@ user_settings = st.session_state.settings
 # --- SIDEBAR ORCHESTRATION ---
 with st.sidebar:
     st.title("⚡ Fenix AI")
-    st.caption(f"Authenticated as: **{current_user['username']}**")
+    
+    # Premium Tier Membership Status Badge Component
+    if user_settings.get("is_pro", 0) == 1:
+        st.markdown('<div class="pro-badge">PRO ARCHITECT ACCESS</div>', unsafe_allow_html=True)
+    else:
+        st.caption("Standard Free Tier Node")
+        
+    st.caption(f"User: **{current_user['username']}**")
     
     col_nav_1, col_nav_2 = st.columns(2)
     with col_nav_1:
         if st.button("➕ New Chat", use_container_width=True):
             new_id = f"chat_{int(datetime.now().timestamp())}"
-            create_conversation(new_id, current_user['id'], "New Dialogue Chain")
+            create_conversation(new_id, current_user['id'], f"Session {datetime.now().strftime('%b %d, %H:%M')}")
             st.session_state.current_conversation_id = new_id
             st.session_state.uploaded_file_context = ""
             st.session_state.attached_image = None
@@ -459,7 +456,7 @@ with st.sidebar:
         st.write("### Conversations Logs")
         for conv in conversations:
             is_active = (conv['id'] == st.session_state.current_conversation_id)
-            lbl = f"💬 {conv['title'][:22]}" + ("" if len(conv['title']) <= 22 else "...")
+            lbl = f"💬 {conv['title']}"
             
             col_c1, col_c2 = st.columns([4, 1])
             with col_c1:
@@ -473,14 +470,12 @@ with st.sidebar:
                         st.session_state.current_conversation_id = None
                     st.rerun()
     else:
-        st.caption("No chat records found.")
+        st.caption("No active chat sessions found.")
 
     st.write("---")
-    if st.session_state.current_conversation_id:
-        new_title = st.text_input("Rename Current Session", value="")
-        if st.button("Confirm Title Update") and new_title.strip():
-            rename_conversation(st.session_state.current_conversation_id, new_title.strip())
-            st.rerun()
+    # Live Pipeline Execution Metrics Display Dashboard Widget
+    st.write("### Session Status Logs")
+    st.info(f"ID: {st.session_state.current_conversation_id or 'None Staged'}\nActive Thread Memory: Safe")
 
 # --- MAIN CONTROLLER ROUTING PANELS ---
 if not st.session_state.current_conversation_id:
@@ -489,8 +484,4 @@ if not st.session_state.current_conversation_id:
         st.session_state.current_conversation_id = conversations_pre[0]['id']
         st.rerun()
     else:
-        st.info("💡 Create your first chat pipeline log by clicking on 'New Chat' inside the left navigation pane.")
-        st.stop()
-
-active_conv_id = st.session_state.current_conversation_id
-messages_history = load_m
+        st.info("💡 Create your first chat pipeline log by click
