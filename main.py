@@ -1,396 +1,497 @@
+import os
+import io
+import re
+import sqlite3
+import zipfile
+from datetime import datetime
 import streamlit as st
-import streamlit.components.v1 as components  # Required for AdSense injection
-
-# --- 1. ADS.TXT CRAWLER INTERCEPTOR ---
-# Access this via: https://yourwebsite.com/?page=ads.txt
-if st.query_params.get("page") == "ads.txt":
-    st.text("google.com, pub-4497729916962374, DIRECT, f08c47fec0942fa0")
-    st.stop()
-
-from google import genai
-from google.genai import types
-from openai import OpenAI
+import bcrypt
 from PIL import Image
 from gtts import gTTS
 from fpdf import FPDF
-import io
-import zipfile
-import os
-import time  # Cache breaking module initialization
 
-# Try importing groq natively, provide explicit error handling if not installed
+# --- API SDK IMPORTS & INITIALIZATION UTILS ---
+# Using standard google-generativeai and groq packages for reliability
+try:
+    import google.generativeai as genai
+except ImportError:
+    genai = None
+
 try:
     from groq import Groq
 except ImportError:
-    st.error("Please add 'groq' to your requirements.txt or run: pip install groq")
-    st.stop()
+    Groq = None
 
-# --- 2. PREMIUM WHITE & HIGH-ACCURACY UI THEME ---
-st.set_page_config(page_title="Fenix Pro", page_icon="🔥", layout="wide")
+# --- DATABASE MANAGEMENT ---
+DB_FILE = "fenix_ai.db"
 
-# --- META TAG INJECTION SYSTEM ---
-# Injects your direct verification meta tag into the dynamic DOM head
-st.html("""
-    <head>
-        <meta name="google-adsense-account" content="ca-pub-4497729916962374">
-    </head>
-""")
+def get_db_connection():
+    conn = sqlite3.connect(DB_FILE, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
 
-st.markdown("""
-    <style>
-        /* Core Layout Architecture Reset */
-        .stApp { background-color: #ffffff !important; color: #000000 !important; }
-        [data-testid="stSidebar"] { background-color: #f8f9fa !important; border-right: 1px solid #eeeeee; }
-        .stChatInput { border-radius: 24px !important; border: 1px solid #e0e0e0 !important; }
-        .stChatMessage { background-color: #f7f7f8; border-radius: 16px; margin-bottom: 12px; padding: 15px; position: relative; }
-        
-        /* Premium Navigation Styling Elements */
-        .pro-header {
-            background: linear-gradient(135deg, #FFD700, #FFA500);
-            color: #000; padding: 10px; border-radius: 12px;
-            text-align: center; font-weight: 800; font-size: 16px;
-            margin-bottom: 20px; box-shadow: 0px 4px 10px rgba(255, 215, 0, 0.2);
-        }
-        .normal-header { text-align: center; font-size: 32px; font-weight: 800; margin-bottom: 20px; color: #ff4b4b; letter-spacing: -1px; }
-        .pro-item-text { color: #B8860B; font-weight: bold; font-size: 14px; margin-top: 10px; }
-        .stFileUploader { border: 1px dashed #cccccc !important; border-radius: 12px; background-color: #fafafa; }
-        
-        /* Upper Right Corner Audio Icon Grid Align */
-        .corner-audio-wrapper {
-            position: absolute;
-            top: 10px;
-            right: 15px;
-            z-index: 99;
-        }
-        .corner-audio-wrapper button {
-            background: transparent !important;
-            border: none !important;
-            padding: 0px !important;
-            font-size: 14px !important;
-            box-shadow: none !important;
-            color: #555555 !important;
-        }
-    </style>
-    """, unsafe_allow_html=True)
+def init_db():
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        # Users Table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password TEXT NOT NULL,
+                avatar TEXT,
+                created_at TEXT NOT NULL
+            )
+        """)
+        # Conversations Table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS conversations (
+                id TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        """)
+        # Messages Table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                conversation_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                FOREIGN KEY(conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+            )
+        """)
+        # Settings Table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                user_id INTEGER PRIMARY KEY,
+                theme TEXT DEFAULT 'dark',
+                default_model TEXT DEFAULT 'gemini-1.5-flash',
+                api_key_gemini TEXT,
+                api_key_groq TEXT,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        """)
+        conn.commit()
 
-# --- 3. ADSENSE CONFIGURATION MATRIX ---
-ADSENSE_CODE = """
-<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4497729916962374"
-     crossorigin="anonymous"></script>
-<ins class="adsbygoogle"
-     style="display:block"
-     data-ad-client="ca-pub-4497729916962374"
-     data-ad-slot="XXXXXXXXXX"
-     data-ad-format="auto"
-     data-full-width-responsive="true"></ins>
-<script>
-     (adsbygoogle = window.adsbygoogle || []).push({});
-</script>
-"""
+init_db()
 
-# --- 4. LIFECYCLE MEMORY MATRIX ---
-if "users" not in st.session_state: st.session_state.users = {"admin": "taha123"}  
-if "logged_in" not in st.session_state: st.session_state.logged_in = False
-if "current_user" not in st.session_state: st.session_state.current_user = ""
-if "is_pro" not in st.session_state: st.session_state.is_pro = False
-if "messages" not in st.session_state: st.session_state.messages = []
-if "page" not in st.session_state: st.session_state.page = "Chat"
-if "last_qa_text" not in st.session_state: st.session_state.last_qa_text = ""
-if "active_audio_track" not in st.session_state: st.session_state.active_audio_track = None
-
-# --- 5. SECURITY GATEWAY ENTRY ---
-def show_auth_page():
-    st.markdown("<div class='normal-header'>Fenix Access</div>", unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        auth_tab1, auth_tab2 = st.tabs(["🔑 Login", "📝 Register"])
-        with auth_tab1:
-            u = st.text_input("Username", key="l_user")
-            p = st.text_input("Password", type="password", key="l_pass")
-            if st.button("Login", use_container_width=True):
-                if u in st.session_state.users and st.session_state.users[u] == p:
-                    st.session_state.logged_in = True
-                    st.session_state.current_user = u
-                    st.success(f"Welcome back, {u}!")
-                    st.rerun()
-                else: st.error("Invalid Username or Password")
-        with auth_tab2:
-            new_u = st.text_input("Choose Username", key="r_user")
-            new_p = st.text_input("Choose Password", type="password", key="r_pass")
-            if st.button("Create Account", use_container_width=True):
-                if new_u and new_p:
-                    if new_u in st.session_state.users: st.warning("Username already exists!")
-                    else:
-                        st.session_state.users[new_u] = new_p
-                        st.success("Account created! Please login.")
-                else: st.error("Please fill all fields.")
-
-# --- 6. ENGINE CONTROLLER RUNTIME ---
-if not st.session_state.logged_in:
-    show_auth_page()
-else:
-    groq_available = "GROQ_API_KEY" in st.secrets
-    gemini_available = "GEMINI_API_KEY" in st.secrets
-
-    if not groq_available and not gemini_available:
-        st.error("⚠️ CRITICAL ERROR: Please provide GROQ_API_KEY or GEMINI_API_KEY in secrets.")
-        st.stop()
-
-    # Client Initializations
-    groq_client = Groq(api_key=st.secrets["GROQ_API_KEY"]) if groq_available else None
-    gemini_client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"]) if gemini_available else None
+# --- AUTHENTICATION SERVICES ---
+def register_user(username, password):
+    if not username or not password:
+        return False, "Username and password cannot be empty."
+    if len(password) < 6:
+        return False, "Password must be at least 6 characters long."
     
-    # Injected strict tracking profile directives for location queries
-    FENIX_IDENTITY = (
-        f"Your name is Fenix. You are an elite AI system created by M. Taha Farooq for your user, {st.session_state.current_user}. "
-        "CRITICAL RULES: If anyone asks what is my current location, where I am, or where you/Taha are, you must state: 'I am in Steam Expo Event'. "
-        "If anyone asks about the last location or previous location, you must state: 'I was last active in Usman Public School System Campus 26'."
-    )
+    hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    now = datetime.now().isoformat()
+    
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO users (username, password, created_at) VALUES (?, ?, ?)",
+                (username, bundle_input(username), now) # bundle_input sanitization wrapper
+            )
+            user_id = cursor.lastrowid
+            # Seed default settings
+            cursor.execute(
+                "INSERT INTO settings (user_id) VALUES (?)",
+                (user_id,)
+            )
+            conn.commit()
+        return True, "Registration successful! Please log in."
+    except sqlite3.IntegrityError:
+        return False, "Username already exists."
 
-    # --- SIDEBAR COMPONENT CONSOLE ---
-    with st.sidebar:
-        cache_breaker_url = f"https://raw.githubusercontent.com/Gamingcloud1234/TahaGpt/main/FullLogo.jpg?v={int(time.time())}"
-        try: 
-            st.image(cache_breaker_url, width=90)
-        except: 
-            st.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=80)
-        
-        st.markdown(f"👤 Active: **{st.session_state.current_user}**")
-        if st.button("➕ Clean New Chat", use_container_width=True):
-            st.session_state.messages = []
-            st.session_state.last_qa_text = ""
-            st.session_state.active_audio_track = None
-            st.session_state.page = "Chat"
-            st.rerun()
-        
-        st.divider()
-        app_mode = st.radio("Main Navigation", ["💬 Chatbot Ecosystem", "🎨 Digital Painter", "🖼️ Sight Intelligence"])
-        if "Chatbot" in app_mode: st.session_state.page = "Chat"
-        elif "Painter" in app_mode: st.session_state.page = "Draw"
-        elif "Sight" in app_mode: st.session_state.page = "See"
+def authenticate_user(username, password):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
+        user = cursor.fetchone()
+        if user and bcrypt.checkpw(password.encode('utf-8'), user['password'].encode('utf-8')):
+            return user
+    return None
 
-        st.divider()
-        
-        # --- MODEL RE-MAPPING MATRIX ---
-        model_display_map = {
-            "Fenix 2.5 flash pro": "llama-3.3-70b-versatile",  # High Limit Groq Backbone
-            "Fenix 2.5 flash": "gemini-2.5-flash",              # Native Gemini Backbone
-            "fenix 2.0 [Under Dev]": "llama-3.1-8b-instant",
-            "Fenix 1 [Under Dev]": "mixtral-8x7b-32768"
-        }
-        
-        visible_options = []
-        if groq_available:
-            visible_options += ["Fenix 2.5 flash pro"]
-        if gemini_available:
-            visible_options += ["Fenix 2.5 flash"]
-            
-        visible_options += ["fenix 2.0 [Under Dev]", "Fenix 1 [Under Dev]"]
-            
-        selected_display = st.selectbox("Active Brain Core", visible_options, index=0)
-        selected_model = model_display_map[selected_display]
+def bundle_input(val):
+    return str(val).strip()
 
-        # --- DYNAMIC EXPORT LOG COMPILER (ZIP) ---
-        if st.session_state.last_qa_text:
-            st.divider()
-            st.markdown("### 🗂️ Export Package Available")
-            zip_buffer = io.BytesIO()
-            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-                zip_file.writestr("fenix_qa_output.txt", st.session_state.last_qa_text)
-            zip_buffer.seek(0)
-            st.download_button(label="📥 Download last QA (.zip)", data=zip_buffer, file_name="fenix_packaged_output.zip", mime="application/zip", use_container_width=True)
+# --- USER SETTINGS & DATA SERVICES ---
+def get_user_settings(user_id):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM settings WHERE user_id = ?", (user_id,))
+        row = cursor.fetchone()
+        if row:
+            return dict(row)
+    return {"theme": "dark", "default_model": "gemini-1.5-flash", "api_key_gemini": "", "api_key_groq": ""}
 
-        st.divider()
-        st.caption("🔥 Fenix Ecosystem | Karachi 2026")
+def update_user_settings(user_id, theme, default_model, api_key_gemini, api_key_groq):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE settings 
+            SET theme = ?, default_model = ?, api_key_gemini = ?, api_key_groq = ?
+            WHERE user_id = ?
+        """, (theme, default_model, api_key_gemini, api_key_groq, user_id))
+        conn.commit()
 
-        # --- PRO PRICING CHANNELS ---
-        if not st.session_state.is_pro:
-            with st.expander("💎 Upgrade to Fenix Pro"):
-                promo = st.text_input("Promo Code", key="promo_input")
-                if st.button("Validate Access", use_container_width=True):
-                    if promo == "FenixOG": st.session_state.is_pro = True; st.rerun()
-                    else: st.error("Code unauthorized")
-                st.write("--- OR ---")
-                st.button("💳 Purchase Access (100 PKR)", use_container_width=True)
+def update_user_profile(user_id, password=None, avatar=None):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        if password:
+            hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+            cursor.execute("UPDATE users SET password = ? WHERE id = ?", (hashed, user_id))
+        if avatar:
+            cursor.execute("UPDATE users SET avatar = ? WHERE id = ?", (avatar, user_id))
+        conn.commit()
+
+# --- CONVERSATION SERVICES ---
+def load_conversations(user_id, search_query=None):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        if search_query:
+            cursor.execute("""
+                SELECT * FROM conversations 
+                WHERE user_id = ? AND title LIKE ? 
+                ORDER BY updated_at DESC
+            """, (user_id, f"%{search_query}%"))
         else:
-            st.markdown("<p class='pro-item-text'>💎 Unlocked Modules</p>", unsafe_allow_html=True)
-            if st.button("📄 Pro Document Engine", use_container_width=True): st.session_state.page = "PDF_Mode"; st.rerun()
-            if st.button("💻 Automated Coding Lab", use_container_width=True): st.session_state.page = "Code_Mode"; st.rerun()
-            if st.button("❌ Core Downgrade", use_container_width=True): st.session_state.is_pro = False; st.rerun()
+            cursor.execute("""
+                SELECT * FROM conversations 
+                WHERE user_id = ? 
+                ORDER BY updated_at DESC
+            """, (user_id,))
+        return [dict(row) for row in cursor.fetchall()]
 
-        st.divider()
-        if st.button("🚪 Leave Session", use_container_width=True):
-            st.session_state.logged_in = False
-            st.session_state.current_user = ""
-            st.rerun()
+def create_conversation(conversation_id, user_id, title):
+    now = datetime.now().isoformat()
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO conversations (id, user_id, title, updated_at)
+            VALUES (?, ?, ?, ?)
+        """, (conversation_id, user_id, title, now))
+        conn.commit()
 
-        # --- ADSENSE SIDEBAR PLACEMENT ---
-        st.caption("Advertisement Portfolio")
-        components.html(ADSENSE_CODE, height=240)
+def rename_conversation(conversation_id, new_title):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE conversations SET title = ? WHERE id = ?
+        """, (new_title, conversation_id))
+        conn.commit()
 
-    # --- TOP MAIN HEADER ---
-    if st.session_state.is_pro: st.markdown('<div class="pro-header">✨ FENIX ELITE ARCHITECTURE PRO ✨</div>', unsafe_allow_html=True)
-    else: st.markdown('<div class="normal-header">Fenix Architecture</div>', unsafe_allow_html=True)
+def delete_conversation(conversation_id):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM conversations WHERE id = ?", (conversation_id,))
+        cursor.execute("DELETE FROM messages WHERE conversation_id = ?", (conversation_id,))
+        conn.commit()
 
-    # --- MODULE PATHWAY ROUTER ---
-    if st.session_state.page == "PDF_Mode":
-        st.header("📄 Pro: Structured PDF Factory")
-        pdf_title = st.text_input("Document Title", "Fenix Production Report")
-        content = st.text_area("Write plain text to compile into PDF format:", height=200)
-        if st.button("Compile & Build PDF"):
-            if content:
-                pdf = FPDF()
-                pdf.add_page()
-                pdf.set_font("Helvetica", "B", 16)
-                pdf.cell(40, 10, pdf_title)
-                pdf.ln(15)
-                pdf.set_font("Helvetica", size=12)
-                pdf.multi_cell(0, 10, content)
-                pdf_output = pdf.output()
-                st.success("PDF Compiled successfully!")
-                st.download_button(label="📥 Download PDF Document", data=bytes(pdf_output), file_name=f"{pdf_title.lower().replace(' ', '_')}.pdf", mime="application/pdf")
-            else: st.warning("Please insert text context.")
+def load_messages(conversation_id):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM messages 
+            WHERE conversation_id = ? 
+            ORDER BY id ASC
+        """, (conversation_id,))
+        return [dict(row) for row in cursor.fetchall()]
 
-    elif st.session_state.page == "Code_Mode":
-        st.header("💻 Pro: Advanced Coding Lab")
-        lang = st.selectbox("Target Stack", ["Python", "JavaScript", "HTML/CSS", "Minecraft Skript"])
-        query = st.text_input("Technical prompt specifications:")
+def save_message(conversation_id, role, content):
+    now = datetime.now().isoformat()
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO messages (conversation_id, role, content, timestamp)
+            VALUES (?, ?, ?, ?)
+        """, (conversation_id, role, content, now))
+        cursor.execute("""
+            UPDATE conversations SET updated_at = ? WHERE id = ?
+        """, (now, conversation_id))
+        conn.commit()
+
+# --- PARSING & FILE UTILS ---
+def extract_text_from_zip(file_bytes):
+    extracted_text = ""
+    try:
+        with zipfile.ZipFile(io.BytesIO(file_bytes)) as z:
+            for filename in z.namelist():
+                if filename.endswith(('.txt', '.py', '.js', '.html', '.css', '.sk')):
+                    with z.open(filename) as f:
+                        extracted_text += f"\n--- File: {filename} ---\n"
+                        extracted_text += f.read().decode('utf-8', errors='ignore')
+    except Exception as e:
+        extracted_text = f"Error extracting ZIP content: {str(e)}"
+    return extracted_text
+
+def extract_text_from_pdf(file_bytes):
+    # Fallback/Lightweight text extraction from PDF binary streams safely without extra hefty deps
+    text = ""
+    try:
+        pdf_str = file_bytes.decode('utf-8', errors='ignore')
+        strings = re.findall(r'\(.*?\)', pdf_str)
+        for s in strings:
+            cleaned = s.strip('()')
+            if len(cleaned) > 2:
+                text += cleaned + " "
+    except Exception:
+        text = "Could not parse system PDF natively."
+    return text if text.strip() else "PDF structural stream processed but no clear ASCII sequences discovered."
+
+# --- AI ENGINES & STREAMING ---
+def generate_ai_stream(model_name, messages, system_instruction, api_keys, attached_image=None):
+    # Route model requests
+    if "gemini" in model_name:
+        if not genai:
+            yield "Google GenAI package not available."
+            return
+        key = api_keys.get("gemini") or os.environ.get("GEMINI_API_KEY")
+        if not key:
+            yield "Missing Gemini API Key. Configure it in Settings."
+            return
         
-        if st.button("Execute Code Synthesis"):
-            if selected_display not in ["Fenix 2.5 flash pro", "Fenix 2.5 flash"]:
-                st.error("Under Development. Come Again or use Gemini 2.5 flash")
-            else:
-                with st.spinner("Synthesizing logic layers..."):
-                    try:
-                        if selected_display == "Fenix 2.5 flash pro":
-                            res = groq_client.chat.completions.create(
-                                model=selected_model,
-                                messages=[{"role": "system", "content": FENIX_IDENTITY}, {"role": "user", "content": f"Write {lang} code for: {query}"}]
-                            )
-                            output_text = res.choices[0].message.content
-                        else:
-                            res = gemini_client.models.generate_content(model=selected_model, contents=f"Write {lang} code for: {query}")
-                            output_text = res.text
-                        st.code(output_text, language=lang.lower())
-                    except Exception as e: st.error(f"Synthesis failed: {e}")
-
-    elif st.session_state.page == "Chat":
-        # --- MULTI-FILE PIPELINE ATTACHMENT HUB (+) ---
-        with st.expander("➕ Attach Media, Scripts, Documentations or ZIP archives to context"):
-            uploaded_files = st.file_uploader("Drop elements into core memory pipeline:", accept_multiple_files=True, type=["jpg", "jpeg", "png", "txt", "py", "pdf", "zip"])
-            context_payload = ""
-            if uploaded_files:
-                for file in uploaded_files:
-                    if file.name.endswith(".zip"):
-                        try:
-                            with zipfile.ZipFile(file) as z:
-                                context_payload += f"\n[Extracted Archive: {file.name}]\n"
-                                for name in z.namelist():
-                                    if not name.endswith('/'):
-                                        with z.open(name) as f: context_payload += f"--- File: {name} ---\n{f.read().decode('utf-8', errors='ignore')}\n"
-                            st.success(f"Processed archive: {file.name}")
-                        except Exception as zip_err: st.error(f"Error reading {file.name}: {zip_err}")
-                    elif file.name.endswith((".txt", ".py")):
-                        context_payload += f"\n[File: {file.name}]:\n{file.read().decode('utf-8', errors='ignore')}\n"
-                        st.success(f"Loaded script data: {file.name}")
-
-        # Core Chat Array Map Canvas Loop
-        for idx, msg in enumerate(st.session_state.messages):
-            with st.chat_message(msg["role"]):
-                st.markdown(msg["content"])
-                
-                if msg["role"] == "assistant" and "Under Development" not in msg["content"]:
-                    st.markdown('<div class="corner-audio-wrapper">', unsafe_allow_html=True)
-                    if st.button("🔊", key=f"audio_ico_{idx}", help="Stream audio"):
-                        st.session_state.active_audio_track = idx
-                        st.rerun()
-                    st.markdown('</div>', unsafe_allow_html=True)
-                    
-                    if st.session_state.active_audio_track == idx:
-                        try:
-                            tts = gTTS(text=msg["content"][:400], lang='en', slow=False)
-                            speech_buffer = io.BytesIO()
-                            tts.write_to_fp(speech_buffer)
-                            st.audio(speech_buffer, format="audio/mp3")
-                        except Exception: pass
-
-        # Interface prompt field trigger evaluation logic
-        if prompt := st.chat_input("Dispatch query instructions..."):
-            if context_payload: prompt = f"{context_payload}\n\n[User Instructions]: {prompt}"
-            st.session_state.messages.append({"role": "user", "content": prompt})
+        genai.configure(api_key=key)
+        
+        try:
+            # Construct model input format
+            formatted_contents = []
+            if attached_image:
+                formatted_contents.append(attached_image)
             
-            # SAFEGUARD ENFORCEMENT MATCHING NEW SELECTIONS
-            if selected_display not in ["Fenix 2.5 flash pro", "Fenix 2.5 flash"]:
-                st.session_state.messages.append({"role": "assistant", "content": "Under Development. Come Again or use Gemini 2.5 flash"})
+            # Combine historical messages for execution
+            history_text = f"System Instruction: {system_instruction}\n\n"
+            for m in messages:
+                history_text += f"{m['role'].capitalize()}: {m['content']}\n"
+            
+            formatted_contents.append(history_text)
+            
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content(formatted_contents, stream=True)
+            for chunk in response:
+                if chunk.text:
+                    yield chunk.text
+        except Exception as e:
+            yield f"Gemini Engine Error: {str(e)}"
+
+    elif "groq" in model_name or "llama" in model_name or "mixtral" in model_name:
+        if not Groq:
+            yield "Groq package not available."
+            return
+        key = api_keys.get("groq") or os.environ.get("GROQ_API_KEY")
+        if not key:
+            yield "Missing Groq API Key. Configure it in Settings."
+            return
+        
+        try:
+            client = Groq(api_key=key)
+            groq_messages = [{"role": "system", "content": system_instruction}]
+            for m in messages:
+                # Basic translation mapping
+                role = "assistant" if m['role'] == "assistant" else "user"
+                groq_messages.append({"role": role, "content": m['content']})
+                
+            # Handle vision requests cleanly if fallback allowed
+            if attached_image and "vision" in model_name:
+                groq_messages.append({"role": "user", "content": "Analyze the previously uploaded context asset image."})
+
+            completion = client.chat.completions.create(
+                model=model_name,
+                messages=groq_messages,
+                stream=True
+            )
+            for chunk in completion:
+                delta = chunk.choices[0].delta.content
+                if delta:
+                    yield delta
+        except Exception as e:
+            yield f"Groq Engine Error: {str(e)}"
+    else:
+        yield "Unsupported or unrecognized pipeline orchestration model layout selected."
+
+# --- DOCUMENT & EXPORT MANAGEMENT ---
+def export_to_txt(messages):
+    output = "FENIX AI - CHAT EXPORT\n=======================\n\n"
+    for m in messages:
+        output += f"[{m['timestamp']}] {m['role'].upper()}:\n{m['content']}\n\n"
+    return output.encode('utf-8')
+
+def export_to_pdf(messages):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    pdf.cell(200, 10, txt="Fenix AI - Chat Transcript Summary", ln=1, align="C")
+    pdf.ln(10)
+    
+    for m in messages:
+        role_stamp = f"[{m['timestamp']}] {m['role'].upper()}: "
+        pdf.set_bold() if m['role'] == 'assistant' else pdf.set_text_color(50, 50, 50)
+        pdf.multi_cell(0, 10, txt=role_stamp.encode('latin-1', 'ignore').decode('latin-1'))
+        pdf.set_font("Arial", size=10)
+        pdf.multi_cell(0, 8, txt=m['content'].encode('latin-1', 'ignore').decode('latin-1'))
+        pdf.ln(4)
+    return pdf.output(dest='S').encode('latin-1')
+
+def export_to_zip(messages):
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
+        txt_data = export_to_txt(messages)
+        zip_file.writestr("chat_transcript.txt", txt_data)
+    return zip_buffer.getvalue()
+
+# --- APPLICATION STATE STORAGE ---
+if 'user' not in st.session_state:
+    st.session_state.user = None
+if 'settings' not in st.session_state:
+    st.session_state.settings = {}
+if 'current_conversation_id' not in st.session_state:
+    st.session_state.current_conversation_id = None
+if 'uploaded_file_context' not in st.session_state:
+    st.session_state.uploaded_file_context = ""
+if 'attached_image' not in st.session_state:
+    st.session_state.attached_image = None
+if 'tts_audio_data' not in st.session_state:
+    st.session_state.tts_audio_data = {}
+
+# --- PAGE STYLING & CORE CONFIGS ---
+st.set_page_config(page_title="Fenix AI", layout="wide", initial_sidebar_state="expanded")
+
+# Inject ChatGPT-styled Dark/Light Themes dynamically via Custom CSS Injector Layout
+def apply_theme_styles():
+    theme = st.session_state.settings.get('theme', 'dark')
+    if theme == 'dark':
+        st.markdown("""
+            <style>
+                html, body, [data-testid="stAppViewContainer"] { background-color: #212121; color: #ececf1; }
+                [data-testid="stSidebar"] { background-color: #171717 !important; }
+                div.stButton > button { background-color: #343541; color: white; border: 1px solid #4d4d4f; border-radius: 6px; }
+                div.stButton > button:hover { background-color: #40414f; }
+                .chat-msg-user { background-color: #212121; padding: 15px; border-radius: 8px; margin-bottom: 10px; }
+                .chat-msg-assistant { background-color: #2f2f2f; padding: 15px; border-radius: 8px; margin-bottom: 10px; border-left: 3px solid #10a37f; }
+                code { background-color: #0d0d0d !important; color: #f8f8f2 !important; }
+            </style>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+            <style>
+                html, body, [data-testid="stAppViewContainer"] { background-color: #ffffff; color: #191919; }
+                [data-testid="stSidebar"] { background-color: #f9f9f9 !important; }
+                div.stButton > button { background-color: #ffffff; color: #191919; border: 1px solid #e5e5e5; border-radius: 6px; }
+                div.stButton > button:hover { background-color: #f2f2f2; }
+                .chat-msg-user { background-color: #ffffff; padding: 15px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #e5e5e5; }
+                .chat-msg-assistant { background-color: #f7f7f8; padding: 15px; border-radius: 8px; margin-bottom: 10px; border-left: 3px solid #10a37f; }
+                code { background-color: #f1f1f1 !important; color: #c41d7f !important; }
+            </style>
+        """, unsafe_allow_html=True)
+
+apply_theme_styles()
+
+# --- AUTHENTICATION INTERFACE SHIELD ---
+if st.session_state.user is None:
+    st.title("⚡ Fenix AI Workspace")
+    tabs = st.tabs(["Sign In", "Create Account"])
+    
+    with tabs[0]:
+        st.subheader("Login Credentials")
+        login_user = st.text_input("Username", key="login_user_input")
+        login_pass = st.text_input("Password", type="password", key="login_pass_input")
+        if st.button("Access Dashboard", use_container_width=True):
+            user = authenticate_user(bundle_input(login_user), login_pass)
+            if user:
+                st.session_state.user = dict(user)
+                st.session_state.settings = get_user_settings(user['id'])
                 st.rerun()
             else:
-                with st.spinner("Retrieving response..."):
-                    try:
-                        # Route dynamically via Groq Client
-                        if selected_display == "Fenix 2.5 flash pro":
-                            response = groq_client.chat.completions.create(
-                                model=selected_model,
-                                messages=[
-                                    {"role": "system", "content": FENIX_IDENTITY},
-                                    {"role": "user", "content": prompt}
-                                ]
-                            )
-                            bot_response = response.choices[0].message.content
-                        
-                        # Route dynamically via Gemini Client
-                        else:
-                            response = gemini_client.models.generate_content(
-                                model=selected_model, 
-                                config=types.GenerateContentConfig(system_instruction=FENIX_IDENTITY), 
-                                contents=prompt
-                            )
-                            bot_response = response.text
-                            
-                        st.session_state.messages.append({"role": "assistant", "content": bot_response})
-                        
-                        # Automate log data packaging tracker sequence if requested
-                        trigger_words = ["zip", "save as zip", "convert to zip", "compress this"]
-                        if any(word in prompt.lower() for word in trigger_words):
-                            st.session_state.last_qa_text = f"--- CHAT LOG ARCHIVE ---\nUser:\n{prompt}\n\nFenix Output:\n{bot_response}"
-                            st.sidebar.info("✨ Package compiled! Check left menu sidebar panel.")
-                        st.rerun()
-                            
-                    except Exception as e: st.error(f"Ecosystem Failure: {e}")
+                st.error("Invalid username or matching password profile layout verification failed.")
+                
+    with tabs[1]:
+        st.subheader("Registration Portal")
+        reg_user = st.text_input("Choose Username", key="reg_user_input")
+        reg_pass = st.text_input("Choose Password", type="password", key="reg_pass_input")
+        if st.button("Register Account", use_container_width=True):
+            success, msg = register_user(bundle_input(reg_user), reg_pass)
+            if success:
+                st.success(msg)
+            else:
+                st.error(msg)
+    st.stop()
 
-        # --- ADSENSE CHAT INTERFACE FOOTER PLACEMENT ---
-        st.write("---")
-        components.html(ADSENSE_CODE, height=140)
+# --- INITIALIZE USER DATA CONTEXTS ---
+current_user = st.session_state.user
+user_settings = st.session_state.settings
 
-    elif st.session_state.page == "Draw":
-        st.header("🎨 AI Generative Spatial Painter")
-        p = st.text_input("Provide aesthetic specifications:")
-        if st.button("Render Spatial Grid"):
-            with st.spinner("Constructing image arrays..."):
-                try:
-                    if gemini_available:
-                        res = gemini_client.models.generate_content(model='gemini-2.5-flash-image', contents=p, config=types.GenerateContentConfig(response_modalities=["IMAGE"]))
-                        for part in res.candidates[0].content.parts:
-                            if part.inline_data: st.image(io.BytesIO(part.inline_data.data), use_container_width=True)
-                    else:
-                        st.error("Image generation requires an active GEMINI_API_KEY in secrets.")
-                except Exception as e: st.error(f"Renderer Fault: {e}")
+# --- SIDEBAR ORCHESTRATION ---
+with st.sidebar:
+    st.title("⚡ Fenix AI")
+    st.caption(f"Authenticated as: **{current_user['username']}**")
+    
+    # Navigation Action Hub
+    col_nav_1, col_nav_2 = st.columns(2)
+    with col_nav_1:
+        if st.button("➕ New Chat", use_container_width=True):
+            new_id = f"chat_{int(datetime.now().timestamp())}"
+            create_conversation(new_id, current_user['id'], "New Dialogue Chain")
+            st.session_state.current_conversation_id = new_id
+            st.session_state.uploaded_file_context = ""
+            st.session_state.attached_image = None
+            st.rerun()
+    with col_nav_2:
+        if st.button("🚪 Sign Out", use_container_width=True):
+            st.session_state.user = None
+            st.session_state.current_conversation_id = None
+            st.rerun()
 
-    elif st.session_state.page == "See":
-        st.header("🖼️ Multimodal Intelligence Interface")
-        uploaded_file = st.file_uploader("Upload asset for tracking analysis:", type=["jpg", "jpeg", "png"])
-        if uploaded_file:
-            img = Image.open(uploaded_file)
-            st.image(img, caption='Active Workspace Element', use_container_width=True)
-            if st.button("Initialize Deep Visual Processing"):
-                if selected_display not in ["Fenix 2.5 flash pro", "Fenix 2.5 flash"]:
-                    st.error("Under Development. Come Again or use Gemini 2.5 flash")
-                else:
-                    with st.spinner("Processing visual layers..."):
-                        try:
-                            if gemini_available:
-                                # Always drop onto Gemini for structural vision matrix operations
-                                res = gemini_client.models.generate_content(model="gemini-2.5-flash", contents=["Analyze this image asset data meticulously:", img])
-                                st.write(res.text)
-                            else:
-                                st.warning("Vision layers utilize native Gemini hardware nodes. Please verify your GEMINI_API_KEY config.")
-                        except Exception as e: st.error(e)
+    st.write("---")
+    
+    # Conversation Search Bar
+    search_q = st.text_input("🔍 Search Logs", placeholder="Keywords...")
+    
+    # Active Conversation Tree Builder
+    conversations = load_conversations(current_user['id'], search_query=search_q)
+    
+    if conversations:
+        st.write("### Conversations Logs")
+        for conv in conversations:
+            # Simple list layouts
+            is_active = (conv['id'] == st.session_state.current_conversation_id)
+            lbl = f"💬 {conv['title'][:22]}" + ("" if len(conv['title']) <= 22 else "...")
+            
+            col_c1, col_c2 = st.columns([4, 1])
+            with col_c1:
+                if st.button(lbl, key=f"select_{conv['id']}", use_container_width=True, type="secondary" if not is_active else "primary"):
+                    st.session_state.current_conversation_id = conv['id']
+                    st.rerun()
+            with col_c2:
+                if st.button("🗑️", key=f"del_{conv['id']}", help="Delete log"):
+                    delete_conversation(conv['id'])
+                    if st.session_state.current_conversation_id == conv['id']:
+                        st.session_state.current_conversation_id = None
+                    st.rerun()
+    else:
+        st.caption("No chat records found.")
+
+    st.write("---")
+    st.write("### Quick Management Controls")
+    if st.session_state.current_conversation_id:
+        new_title = st.text_input("Rename Current Session", value="")
+        if st.button("Confirm Title Update") and new_title.strip():
+            rename_conversation(st.session_state.current_conversation_id, new_title.strip())
+            st.rerun()
+
+# --- MAIN CONTROLLER ROUTING PANELS ---
+if not st.session_state.current_conversation_id:
+    # Auto select or prompt creation setup
+    conversations_pre = load_conversations(current_user['id'])
+    if conversations_pre:
+        st.session_state.current_conversation_id = conversations_pre[0]['id']
+        st.rerun()
+    else:
+        st.info("💡 Create your first chat pipeline log by clicking on 'New Chat' inside the left navigation pane.")
+        st.stop()
+
+# Load current operational parameters
+active_conv_id = st.se
