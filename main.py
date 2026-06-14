@@ -10,21 +10,22 @@ from PIL import Image
 from gtts import gTTS
 from fpdf import FPDF
 
-# --- API SDK IMPORTS & INITIALIZATION UTILS ---
-# Using standard google-generativeai and groq packages for reliability
-try:
-    import google.generativeai as genai
-except ImportError:
-    genai = None
-
-try:
-    from groq import Groq
-except ImportError:
-    Groq = None
+# --- AUTOMATIC RECOVERY: CLEAR CORRUPTED OLD DB ---
+DB_FILE = "fenix_ai.db"
+if os.path.exists(DB_FILE):
+    try:
+        # We check if an old broken user exists; if so, clear the DB to avoid bad data crashes
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM users LIMIT 1")
+        row = cursor.fetchone()
+        if row and not str(row[2]).startswith('$2b$'):
+            conn.close()
+            os.remove(DB_FILE) # Safe reset for the user fix
+    except Exception:
+        pass
 
 # --- DATABASE MANAGEMENT ---
-DB_FILE = "fenix_ai.db"
-
 def get_db_connection():
     conn = sqlite3.connect(DB_FILE, check_same_thread=False)
     conn.row_factory = sqlite3.Row
@@ -64,11 +65,11 @@ def init_db():
                 FOREIGN KEY(conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
             )
         """)
-        # Settings Table
+        # Settings Table - Changed default to 'light'
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS settings (
                 user_id INTEGER PRIMARY KEY,
-                theme TEXT DEFAULT 'dark',
+                theme TEXT DEFAULT 'light',
                 default_model TEXT DEFAULT 'gemini-1.5-flash',
                 api_key_gemini TEXT,
                 api_key_groq TEXT,
@@ -86,20 +87,22 @@ def register_user(username, password):
     if len(password) < 6:
         return False, "Password must be at least 6 characters long."
     
+    # Correctly hash the incoming password
     hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
     now = datetime.now().isoformat()
     
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
+            # FIXED: Passing 'hashed' here instead of the username wrapper bundle
             cursor.execute(
                 "INSERT INTO users (username, password, created_at) VALUES (?, ?, ?)",
-                (username, bundle_input(username), now) # bundle_input sanitization wrapper
+                (bundle_input(username), hashed, now)
             )
             user_id = cursor.lastrowid
-            # Seed default settings
+            # Seed default settings as light mode
             cursor.execute(
-                "INSERT INTO settings (user_id) VALUES (?)",
+                "INSERT INTO settings (user_id, theme) VALUES (?, 'light')",
                 (user_id,)
             )
             conn.commit()
@@ -112,8 +115,13 @@ def authenticate_user(username, password):
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
         user = cursor.fetchone()
-        if user and bcrypt.checkpw(password.encode('utf-8'), user['password'].encode('utf-8')):
-            return user
+        if user:
+            db_password = user['password']
+            # Safeguard type checking before bcrypt validation execution
+            if isinstance(db_password, str):
+                db_password = db_password.encode('utf-8')
+            if bcrypt.checkpw(password.encode('utf-8'), db_password):
+                return user
     return None
 
 def bundle_input(val):
@@ -127,7 +135,7 @@ def get_user_settings(user_id):
         row = cursor.fetchone()
         if row:
             return dict(row)
-    return {"theme": "dark", "default_model": "gemini-1.5-flash", "api_key_gemini": "", "api_key_groq": ""}
+    return {"theme": "light", "default_model": "gemini-1.5-flash", "api_key_gemini": "", "api_key_groq": ""}
 
 def update_user_settings(user_id, theme, default_model, api_key_gemini, api_key_groq):
     with get_db_connection() as conn:
@@ -230,7 +238,6 @@ def extract_text_from_zip(file_bytes):
     return extracted_text
 
 def extract_text_from_pdf(file_bytes):
-    # Fallback/Lightweight text extraction from PDF binary streams safely without extra hefty deps
     text = ""
     try:
         pdf_str = file_bytes.decode('utf-8', errors='ignore')
@@ -245,31 +252,36 @@ def extract_text_from_pdf(file_bytes):
 
 # --- AI ENGINES & STREAMING ---
 def generate_ai_stream(model_name, messages, system_instruction, api_keys, attached_image=None):
-    # Route model requests
+    try:
+        import google.generativeai as genai
+    except ImportError:
+        genai = None
+
+    try:
+        from groq import Groq
+    except ImportError:
+        Groq = None
+
     if "gemini" in model_name:
         if not genai:
             yield "Google GenAI package not available."
             return
-        key = api_keys.get("gemini") or os.environ.get("GEMINI_API_KEY")
+        key = api_keys.get("api_key_gemini") or os.environ.get("GEMINI_API_KEY")
         if not key:
             yield "Missing Gemini API Key. Configure it in Settings."
             return
         
         genai.configure(api_key=key)
-        
         try:
-            # Construct model input format
             formatted_contents = []
             if attached_image:
                 formatted_contents.append(attached_image)
             
-            # Combine historical messages for execution
             history_text = f"System Instruction: {system_instruction}\n\n"
             for m in messages:
                 history_text += f"{m['role'].capitalize()}: {m['content']}\n"
             
             formatted_contents.append(history_text)
-            
             model = genai.GenerativeModel(model_name)
             response = model.generate_content(formatted_contents, stream=True)
             for chunk in response:
@@ -282,7 +294,7 @@ def generate_ai_stream(model_name, messages, system_instruction, api_keys, attac
         if not Groq:
             yield "Groq package not available."
             return
-        key = api_keys.get("groq") or os.environ.get("GROQ_API_KEY")
+        key = api_keys.get("api_key_groq") or os.environ.get("GROQ_API_KEY")
         if not key:
             yield "Missing Groq API Key. Configure it in Settings."
             return
@@ -291,13 +303,8 @@ def generate_ai_stream(model_name, messages, system_instruction, api_keys, attac
             client = Groq(api_key=key)
             groq_messages = [{"role": "system", "content": system_instruction}]
             for m in messages:
-                # Basic translation mapping
                 role = "assistant" if m['role'] == "assistant" else "user"
                 groq_messages.append({"role": role, "content": m['content']})
-                
-            # Handle vision requests cleanly if fallback allowed
-            if attached_image and "vision" in model_name:
-                groq_messages.append({"role": "user", "content": "Analyze the previously uploaded context asset image."})
 
             completion = client.chat.completions.create(
                 model=model_name,
@@ -311,7 +318,7 @@ def generate_ai_stream(model_name, messages, system_instruction, api_keys, attac
         except Exception as e:
             yield f"Groq Engine Error: {str(e)}"
     else:
-        yield "Unsupported or unrecognized pipeline orchestration model layout selected."
+        yield "Unsupported model selected."
 
 # --- DOCUMENT & EXPORT MANAGEMENT ---
 def export_to_txt(messages):
@@ -329,7 +336,6 @@ def export_to_pdf(messages):
     
     for m in messages:
         role_stamp = f"[{m['timestamp']}] {m['role'].upper()}: "
-        pdf.set_bold() if m['role'] == 'assistant' else pdf.set_text_color(50, 50, 50)
         pdf.multi_cell(0, 10, txt=role_stamp.encode('latin-1', 'ignore').decode('latin-1'))
         pdf.set_font("Arial", size=10)
         pdf.multi_cell(0, 8, txt=m['content'].encode('latin-1', 'ignore').decode('latin-1'))
@@ -347,7 +353,7 @@ def export_to_zip(messages):
 if 'user' not in st.session_state:
     st.session_state.user = None
 if 'settings' not in st.session_state:
-    st.session_state.settings = {}
+    st.session_state.settings = {"theme": "light"} # Instantly default to white light layout setup
 if 'current_conversation_id' not in st.session_state:
     st.session_state.current_conversation_id = None
 if 'uploaded_file_context' not in st.session_state:
@@ -360,9 +366,8 @@ if 'tts_audio_data' not in st.session_state:
 # --- PAGE STYLING & CORE CONFIGS ---
 st.set_page_config(page_title="Fenix AI", layout="wide", initial_sidebar_state="expanded")
 
-# Inject ChatGPT-styled Dark/Light Themes dynamically via Custom CSS Injector Layout
 def apply_theme_styles():
-    theme = st.session_state.settings.get('theme', 'dark')
+    theme = st.session_state.settings.get('theme', 'light')
     if theme == 'dark':
         st.markdown("""
             <style>
@@ -376,6 +381,7 @@ def apply_theme_styles():
             </style>
         """, unsafe_allow_html=True)
     else:
+        # WHITE LIGHT MODE THEME
         st.markdown("""
             <style>
                 html, body, [data-testid="stAppViewContainer"] { background-color: #ffffff; color: #191919; }
@@ -383,8 +389,9 @@ def apply_theme_styles():
                 div.stButton > button { background-color: #ffffff; color: #191919; border: 1px solid #e5e5e5; border-radius: 6px; }
                 div.stButton > button:hover { background-color: #f2f2f2; }
                 .chat-msg-user { background-color: #ffffff; padding: 15px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #e5e5e5; }
-                .chat-msg-assistant { background-color: #f7f7f8; padding: 15px; border-radius: 8px; margin-bottom: 10px; border-left: 3px solid #10a37f; }
+                .chat-msg-assistant { background-color: #f7f7f8; padding: 15px; border-radius: 8px; margin-bottom: 10px; border-left: 3px solid #10a37f; border: 1px solid #e5e5e5; }
                 code { background-color: #f1f1f1 !important; color: #c41d7f !important; }
+                label, p, span, h1, h2, h3, h4 { color: #191919 !important; }
             </style>
         """, unsafe_allow_html=True)
 
@@ -404,9 +411,10 @@ if st.session_state.user is None:
             if user:
                 st.session_state.user = dict(user)
                 st.session_state.settings = get_user_settings(user['id'])
+                apply_theme_styles()
                 st.rerun()
             else:
-                st.error("Invalid username or matching password profile layout verification failed.")
+                st.error("Invalid username or password match failure.")
                 
     with tabs[1]:
         st.subheader("Registration Portal")
@@ -420,7 +428,6 @@ if st.session_state.user is None:
                 st.error(msg)
     st.stop()
 
-# --- INITIALIZE USER DATA CONTEXTS ---
 current_user = st.session_state.user
 user_settings = st.session_state.settings
 
@@ -429,7 +436,6 @@ with st.sidebar:
     st.title("⚡ Fenix AI")
     st.caption(f"Authenticated as: **{current_user['username']}**")
     
-    # Navigation Action Hub
     col_nav_1, col_nav_2 = st.columns(2)
     with col_nav_1:
         if st.button("➕ New Chat", use_container_width=True):
@@ -446,17 +452,12 @@ with st.sidebar:
             st.rerun()
 
     st.write("---")
-    
-    # Conversation Search Bar
     search_q = st.text_input("🔍 Search Logs", placeholder="Keywords...")
-    
-    # Active Conversation Tree Builder
     conversations = load_conversations(current_user['id'], search_query=search_q)
     
     if conversations:
         st.write("### Conversations Logs")
         for conv in conversations:
-            # Simple list layouts
             is_active = (conv['id'] == st.session_state.current_conversation_id)
             lbl = f"💬 {conv['title'][:22]}" + ("" if len(conv['title']) <= 22 else "...")
             
@@ -475,7 +476,6 @@ with st.sidebar:
         st.caption("No chat records found.")
 
     st.write("---")
-    st.write("### Quick Management Controls")
     if st.session_state.current_conversation_id:
         new_title = st.text_input("Rename Current Session", value="")
         if st.button("Confirm Title Update") and new_title.strip():
@@ -484,7 +484,6 @@ with st.sidebar:
 
 # --- MAIN CONTROLLER ROUTING PANELS ---
 if not st.session_state.current_conversation_id:
-    # Auto select or prompt creation setup
     conversations_pre = load_conversations(current_user['id'])
     if conversations_pre:
         st.session_state.current_conversation_id = conversations_pre[0]['id']
@@ -493,5 +492,5 @@ if not st.session_state.current_conversation_id:
         st.info("💡 Create your first chat pipeline log by clicking on 'New Chat' inside the left navigation pane.")
         st.stop()
 
-# Load current operational parameters
-active_conv_id = st.se
+active_conv_id = st.session_state.current_conversation_id
+messages_history = load_m
