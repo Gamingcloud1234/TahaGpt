@@ -24,7 +24,7 @@ st.set_page_config(
 )
 
 DB_FILE = os.environ.get("FENIX_DB_FILE", "fenix_ai.db")
-DEFAULT_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+DEFAULT_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
 
 
 # ------------------------------------------------------------
@@ -76,7 +76,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS settings (
                 user_id INTEGER PRIMARY KEY,
                 theme TEXT DEFAULT 'light',
-                default_model TEXT DEFAULT 'gemini-2.5-flash',
+                default_model TEXT DEFAULT 'gemini-3.6-flash',
                 api_key_gemini TEXT DEFAULT '',
                 api_key_groq TEXT DEFAULT '',
                 custom_sys_prompt TEXT DEFAULT '',
@@ -105,6 +105,13 @@ def init_db():
 
         # Keep the rebuilt Fenix interface in light mode by default.
         cur.execute("UPDATE settings SET theme = 'light' WHERE theme IS NULL OR theme = 'dark'")
+
+        # The old Gemini 2.5 Flash model is retired for new users.
+        # Automatically migrate existing saved settings to the current model.
+        cur.execute(
+            "UPDATE settings SET default_model = ? WHERE default_model = ? OR default_model IS NULL OR TRIM(default_model) = ''",
+            (DEFAULT_MODEL, "gemini-2.5-flash"),
+        )
 
         conn.commit()
 
@@ -457,6 +464,14 @@ def extract_uploaded_file(uploaded_file):
 # ------------------------------------------------------------
 # GEMINI REST API
 # ------------------------------------------------------------
+def normalize_gemini_model(model):
+    """Return a currently supported default model and remove the retired model."""
+    model = clean_text(model)
+    if not model or model == "gemini-2.5-flash":
+        return DEFAULT_MODEL
+    return model
+
+
 def resolve_gemini_key(settings):
     return (
         clean_text(settings.get("api_key_gemini"))
@@ -636,7 +651,7 @@ def generate_gemini_answer(
             "Open Settings → Gemini AI and add your API key."
         )
 
-    model = clean_text(
+    model = normalize_gemini_model(
         settings.get("default_model") or DEFAULT_MODEL
     )
 
@@ -695,7 +710,7 @@ def transcribe_audio_with_gemini(
             "Gemini API key is required for voice transcription."
         )
 
-    model = clean_text(
+    model = normalize_gemini_model(
         settings.get("default_model") or DEFAULT_MODEL
     )
 
@@ -1669,7 +1684,7 @@ elif page == "⚙️ Settings":
         update_user_settings(
             current_user["id"],
             theme,
-            model.strip() or DEFAULT_MODEL,
+            normalize_gemini_model(model),
             gemini_key.strip(),
             groq_key.strip(),
             custom_prompt,
