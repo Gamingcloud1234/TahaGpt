@@ -825,6 +825,60 @@ def export_to_txt(messages):
     return "\n".join(output).encode("utf-8")
 
 
+def _pdf_safe_text(value, max_token=70):
+    """Make chat text safe for FPDF's built-in Helvetica font and line breaker.
+
+    FPDF can fail when a single unbreakable token (for example a very long URL,
+    code string, or repeated character sequence) is wider than the printable
+    page.  We insert normal spaces into only those extremely long tokens so the
+    PDF renderer always has a legal break point.
+    """
+    text = str(value if value is not None else "")
+
+    # Remove control characters except normal whitespace.
+    cleaned = []
+    for ch in text:
+        code = ord(ch)
+        if code in (9, 10, 13) or code >= 32:
+            cleaned.append(ch)
+        else:
+            cleaned.append(" ")
+    text = "".join(cleaned)
+
+    # The built-in Helvetica font is Latin-1. Replace unsupported Unicode
+    # characters rather than allowing encoding errors during PDF generation.
+    text = text.encode("latin-1", errors="replace").decode("latin-1")
+
+    # Break only very long whitespace-free runs. This prevents the
+    # "Not enough horizontal space to render a single character" exception.
+    output = []
+    for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        words = line.split(" ")
+        rebuilt = []
+        for word in words:
+            if len(word) <= max_token:
+                rebuilt.append(word)
+                continue
+            chunks = [word[i:i + max_token] for i in range(0, len(word), max_token)]
+            rebuilt.append(" ".join(chunks))
+        output.append(" ".join(rebuilt))
+
+    return "\n".join(output)
+
+
+def _pdf_write(pdf, text, height=6):
+    """Write text using an explicit printable width and character wrapping."""
+    safe = _pdf_safe_text(text)
+    width = pdf.w - pdf.l_margin - pdf.r_margin
+
+    try:
+        from fpdf.enums import WrapMode
+        pdf.multi_cell(width, height, safe or " ", wrapmode=WrapMode.CHAR)
+    except (ImportError, TypeError):
+        # Compatibility fallback for older fpdf2 versions.
+        pdf.multi_cell(width, height, safe or " ")
+
+
 def export_to_pdf(messages):
     if FPDF is None:
         return None
@@ -846,23 +900,21 @@ def export_to_pdf(messages):
     pdf.set_font("Helvetica", size=9)
 
     for message in messages:
-        role = message["role"].upper()
-        timestamp = message["timestamp"]
+        role = str(message.get("role", "")).upper()
+        timestamp = str(message.get("timestamp", ""))
 
-        header = f"[{timestamp}] {role}"
-        safe_header = header.encode(
-            "latin-1",
-            errors="replace"
-        ).decode("latin-1")
+        _pdf_write(
+            pdf,
+            f"[{timestamp}] {role}",
+            height=6,
+        )
 
-        safe_content = message["content"].encode(
-            "latin-1",
-            errors="replace"
-        ).decode("latin-1")
-
-        pdf.multi_cell(0, 6, safe_header)
         pdf.set_font("Helvetica", size=10)
-        pdf.multi_cell(0, 6, safe_content)
+        _pdf_write(
+            pdf,
+            message.get("content", ""),
+            height=6,
+        )
         pdf.ln(3)
         pdf.set_font("Helvetica", size=9)
 
