@@ -13,12 +13,6 @@ import streamlit as st
 import bcrypt
 from PIL import Image
 
-# Optional dependencies are imported only when needed.
-try:
-    from fpdf import FPDF
-except ImportError:
-    FPDF = None
-
 # ------------------------------------------------------------
 # APP CONFIG
 # ------------------------------------------------------------
@@ -81,7 +75,7 @@ def init_db():
         cur.execute("""
             CREATE TABLE IF NOT EXISTS settings (
                 user_id INTEGER PRIMARY KEY,
-                theme TEXT DEFAULT 'dark',
+                theme TEXT DEFAULT 'light',
                 default_model TEXT DEFAULT 'gemini-2.5-flash',
                 api_key_gemini TEXT DEFAULT '',
                 api_key_groq TEXT DEFAULT '',
@@ -108,6 +102,9 @@ def init_db():
         for column, sql in migrations.items():
             if column not in existing:
                 cur.execute(sql)
+
+        # Keep the rebuilt Fenix interface in light mode by default.
+        cur.execute("UPDATE settings SET theme = 'light' WHERE theme IS NULL OR theme = 'dark'")
 
         conn.commit()
 
@@ -157,7 +154,7 @@ def register_user(username: str, password: str):
                 (user_id, theme, default_model, language, voice_enabled)
                 VALUES (?, ?, ?, ?, ?)
                 """,
-                (user_id, "dark", DEFAULT_MODEL, "English", 1),
+                (user_id, "light", DEFAULT_MODEL, "English", 1),
             )
 
             conn.commit()
@@ -205,7 +202,7 @@ def get_user_settings(user_id: int):
         return dict(row)
 
     return {
-        "theme": "dark",
+        "theme": "light",
         "default_model": DEFAULT_MODEL,
         "api_key_gemini": "",
         "api_key_groq": "",
@@ -409,28 +406,6 @@ def extract_text_from_zip(file_bytes: bytes) -> str:
         return "The uploaded ZIP file is invalid."
 
 
-def extract_text_from_pdf(file_bytes: bytes) -> str:
-    try:
-        from pypdf import PdfReader
-
-        reader = PdfReader(io.BytesIO(file_bytes))
-        pages = []
-
-        for page in reader.pages:
-            pages.append(page.extract_text() or "")
-
-        text = "\n\n".join(pages).strip()
-        return text or "No extractable text was found in the PDF."
-
-    except ImportError:
-        return (
-            "PDF text extraction requires the 'pypdf' package. "
-            "Install it with: pip install pypdf"
-        )
-    except Exception as exc:
-        return f"PDF extraction failed: {exc}"
-
-
 def extract_uploaded_file(uploaded_file):
     if not uploaded_file:
         return "", None
@@ -448,9 +423,6 @@ def extract_uploaded_file(uploaded_file):
 
     if name.endswith(".zip"):
         return extract_text_from_zip(data), image
-
-    if name.endswith(".pdf"):
-        return extract_text_from_pdf(data), image
 
     if name.endswith(
         (
@@ -520,7 +492,7 @@ def gemini_request(
         url,
         params={"key": api_key},
         json=payload,
-        timeout=120,
+        timeout=45,
     )
 
     if response.status_code >= 400:
@@ -629,13 +601,15 @@ def build_gemini_contents(messages, system_instruction, file_context=""):
                 {
                     "text": (
                         "UPLOADED FILE CONTEXT:\n"
-                        + file_context[:50000]
+                        + file_context[:20000]
                     )
                 }
             ],
         })
 
-    for message in messages:
+    # Keep the active context compact for faster Gemini responses.
+    recent_messages = messages[-12:]
+    for message in recent_messages:
         role = "model" if message["role"] == "assistant" else "user"
 
         contents.append({
@@ -825,107 +799,6 @@ def export_to_txt(messages):
     return "\n".join(output).encode("utf-8")
 
 
-def _pdf_safe_text(value, max_token=70):
-    """Make chat text safe for FPDF's built-in Helvetica font and line breaker.
-
-    FPDF can fail when a single unbreakable token (for example a very long URL,
-    code string, or repeated character sequence) is wider than the printable
-    page.  We insert normal spaces into only those extremely long tokens so the
-    PDF renderer always has a legal break point.
-    """
-    text = str(value if value is not None else "")
-
-    # Remove control characters except normal whitespace.
-    cleaned = []
-    for ch in text:
-        code = ord(ch)
-        if code in (9, 10, 13) or code >= 32:
-            cleaned.append(ch)
-        else:
-            cleaned.append(" ")
-    text = "".join(cleaned)
-
-    # The built-in Helvetica font is Latin-1. Replace unsupported Unicode
-    # characters rather than allowing encoding errors during PDF generation.
-    text = text.encode("latin-1", errors="replace").decode("latin-1")
-
-    # Break only very long whitespace-free runs. This prevents the
-    # "Not enough horizontal space to render a single character" exception.
-    output = []
-    for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
-        words = line.split(" ")
-        rebuilt = []
-        for word in words:
-            if len(word) <= max_token:
-                rebuilt.append(word)
-                continue
-            chunks = [word[i:i + max_token] for i in range(0, len(word), max_token)]
-            rebuilt.append(" ".join(chunks))
-        output.append(" ".join(rebuilt))
-
-    return "\n".join(output)
-
-
-def _pdf_write(pdf, text, height=6):
-    """Write text using an explicit printable width and character wrapping."""
-    safe = _pdf_safe_text(text)
-    width = pdf.w - pdf.l_margin - pdf.r_margin
-
-    try:
-        from fpdf.enums import WrapMode
-        pdf.multi_cell(width, height, safe or " ", wrapmode=WrapMode.CHAR)
-    except (ImportError, TypeError):
-        # Compatibility fallback for older fpdf2 versions.
-        pdf.multi_cell(width, height, safe or " ")
-
-
-def export_to_pdf(messages):
-    if FPDF is None:
-        return None
-
-    pdf = FPDF()
-    pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.add_page()
-
-    pdf.set_font("Helvetica", size=14)
-    pdf.cell(
-        0,
-        10,
-        "Fenix AI - Chat Transcript",
-        ln=True,
-        align="C",
-    )
-    pdf.ln(6)
-
-    pdf.set_font("Helvetica", size=9)
-
-    for message in messages:
-        role = str(message.get("role", "")).upper()
-        timestamp = str(message.get("timestamp", ""))
-
-        _pdf_write(
-            pdf,
-            f"[{timestamp}] {role}",
-            height=6,
-        )
-
-        pdf.set_font("Helvetica", size=10)
-        _pdf_write(
-            pdf,
-            message.get("content", ""),
-            height=6,
-        )
-        pdf.ln(3)
-        pdf.set_font("Helvetica", size=9)
-
-    output = pdf.output(dest="S")
-
-    if isinstance(output, str):
-        return output.encode("latin-1")
-
-    return bytes(output)
-
-
 def export_to_zip(messages):
     buffer = io.BytesIO()
 
@@ -939,13 +812,6 @@ def export_to_zip(messages):
             export_to_txt(messages),
         )
 
-        pdf_data = export_to_pdf(messages)
-        if pdf_data:
-            archive.writestr(
-                "chat_transcript.pdf",
-                pdf_data,
-            )
-
     return buffer.getvalue()
 
 
@@ -953,7 +819,7 @@ def export_to_zip(messages):
 # SESSION STATE
 # ------------------------------------------------------------
 DEFAULT_SETTINGS = {
-    "theme": "dark",
+    "theme": "light",
     "default_model": DEFAULT_MODEL,
     "api_key_gemini": "",
     "api_key_groq": "",
@@ -1598,7 +1464,7 @@ elif page == "📎 Files":
     st.title("📎 Files & Visual Analysis")
 
     st.write(
-        "Upload a supported text, PDF, ZIP, or image file to provide "
+        "Upload a supported text, ZIP, or image file to provide "
         "additional context to FENIX."
     )
 
@@ -1606,8 +1472,7 @@ elif page == "📎 Files":
         "Upload file",
         type=[
             "txt",
-            "pdf",
-            "zip",
+                "zip",
             "py",
             "js",
             "ts",
@@ -1835,7 +1700,6 @@ elif page == "📊 Diagnostics":
         ("Authentication", st.session_state.user is not None),
         ("Gemini API Key", gemini_key_present),
         ("Voice Recorder", hasattr(st, "audio_input")),
-        ("PDF Export", FPDF is not None),
     ]
 
     for name, status in checks:
@@ -1891,16 +1755,6 @@ if (
                 mime="text/plain",
                 use_container_width=True,
             )
-
-            pdf_data = export_to_pdf(current_messages)
-            if pdf_data:
-                st.download_button(
-                    "⬇️ PDF",
-                    data=pdf_data,
-                    file_name="fenix_chat.pdf",
-                    mime="application/pdf",
-                    use_container_width=True,
-                )
 
             st.download_button(
                 "⬇️ ZIP",
