@@ -1,27 +1,29 @@
+```python
 import os
 import io
-import re
 import json
 import base64
 import sqlite3
 import zipfile
 import uuid
+import re
 from datetime import datetime
-from typing import Generator, Optional
+from typing import Optional
 
 import streamlit as st
 import bcrypt
 from PIL import Image
 
-# Optional dependencies are imported only when needed.
 try:
     from fpdf import FPDF
 except ImportError:
     FPDF = None
 
-# ------------------------------------------------------------
-# APP CONFIG
-# ------------------------------------------------------------
+
+# ============================================================
+# APP CONFIGURATION
+# ============================================================
+
 st.set_page_config(
     page_title="Fenix AI",
     page_icon="⚡",
@@ -30,21 +32,32 @@ st.set_page_config(
 )
 
 DB_FILE = os.environ.get("FENIX_DB_FILE", "fenix_ai.db")
-DEFAULT_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+DEFAULT_MODEL = os.environ.get(
+    "GEMINI_MODEL",
+    "gemini-2.5-flash",
+)
 
 
-# ------------------------------------------------------------
+# ============================================================
 # DATABASE
-# ------------------------------------------------------------
+# ============================================================
+
 def get_db_connection():
-    conn = sqlite3.connect(DB_FILE, check_same_thread=False)
+    conn = sqlite3.connect(
+        DB_FILE,
+        check_same_thread=False,
+    )
+
     conn.row_factory = sqlite3.Row
+
     conn.execute("PRAGMA foreign_keys = ON")
+
     return conn
 
 
 def init_db():
     with get_db_connection() as conn:
+
         cur = conn.cursor()
 
         cur.execute("""
@@ -63,7 +76,9 @@ def init_db():
                 user_id INTEGER NOT NULL,
                 title TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
-                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+                FOREIGN KEY(user_id)
+                REFERENCES users(id)
+                ON DELETE CASCADE
             )
         """)
 
@@ -74,7 +89,9 @@ def init_db():
                 role TEXT NOT NULL,
                 content TEXT NOT NULL,
                 timestamp TEXT NOT NULL,
-                FOREIGN KEY(conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+                FOREIGN KEY(conversation_id)
+                REFERENCES conversations(id)
+                ON DELETE CASCADE
             )
         """)
 
@@ -89,24 +106,33 @@ def init_db():
                 language TEXT DEFAULT 'English',
                 voice_enabled INTEGER DEFAULT 1,
                 auto_send_voice INTEGER DEFAULT 0,
-                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+                FOREIGN KEY(user_id)
+                REFERENCES users(id)
+                ON DELETE CASCADE
             )
         """)
 
-        # Migration for databases created by older versions.
-        existing = {
+        existing_columns = {
             row["name"]
-            for row in cur.execute("PRAGMA table_info(settings)").fetchall()
+            for row in cur.execute(
+                "PRAGMA table_info(settings)"
+            ).fetchall()
         }
 
         migrations = {
-            "language": "ALTER TABLE settings ADD COLUMN language TEXT DEFAULT 'English'",
-            "voice_enabled": "ALTER TABLE settings ADD COLUMN voice_enabled INTEGER DEFAULT 1",
-            "auto_send_voice": "ALTER TABLE settings ADD COLUMN auto_send_voice INTEGER DEFAULT 0",
+            "language":
+                "ALTER TABLE settings ADD COLUMN language TEXT DEFAULT 'English'",
+
+            "voice_enabled":
+                "ALTER TABLE settings ADD COLUMN voice_enabled INTEGER DEFAULT 1",
+
+            "auto_send_voice":
+                "ALTER TABLE settings ADD COLUMN auto_send_voice INTEGER DEFAULT 0",
         }
 
         for column, sql in migrations.items():
-            if column not in existing:
+
+            if column not in existing_columns:
                 cur.execute(sql)
 
         conn.commit()
@@ -115,14 +141,20 @@ def init_db():
 init_db()
 
 
-# ------------------------------------------------------------
-# AUTH
-# ------------------------------------------------------------
+# ============================================================
+# HELPERS
+# ============================================================
+
 def clean_text(value) -> str:
     return str(value or "").strip()
 
 
-def register_user(username: str, password: str):
+# ============================================================
+# AUTHENTICATION
+# ============================================================
+
+def register_user(username, password):
+
     username = clean_text(username)
 
     if not username or not password:
@@ -132,48 +164,76 @@ def register_user(username: str, password: str):
         return False, "Username must contain at least 3 characters."
 
     if len(password) < 6:
-        return False, "Password must be at least 6 characters long."
+        return False, "Password must contain at least 6 characters."
 
     password_hash = bcrypt.hashpw(
         password.encode("utf-8"),
-        bcrypt.gensalt()
+        bcrypt.gensalt(),
     ).decode("utf-8")
 
     try:
+
         with get_db_connection() as conn:
+
             cur = conn.cursor()
+
             cur.execute(
                 """
-                INSERT INTO users (username, password, created_at)
+                INSERT INTO users
+                (username, password, created_at)
                 VALUES (?, ?, ?)
                 """,
-                (username, password_hash, datetime.now().isoformat()),
+                (
+                    username,
+                    password_hash,
+                    datetime.now().isoformat(),
+                ),
             )
+
             user_id = cur.lastrowid
 
             cur.execute(
                 """
                 INSERT INTO settings
-                (user_id, theme, default_model, language, voice_enabled)
+                (
+                    user_id,
+                    theme,
+                    default_model,
+                    language,
+                    voice_enabled
+                )
                 VALUES (?, ?, ?, ?, ?)
                 """,
-                (user_id, "dark", DEFAULT_MODEL, "English", 1),
+                (
+                    user_id,
+                    "dark",
+                    DEFAULT_MODEL,
+                    "English",
+                    1,
+                ),
             )
 
             conn.commit()
 
-        return True, "Registration successful. Please sign in."
+        return True, "Account created successfully."
 
     except sqlite3.IntegrityError:
+
         return False, "Username already exists."
 
 
-def authenticate_user(username: str, password: str):
+def authenticate_user(username, password):
+
     username = clean_text(username)
 
     with get_db_connection() as conn:
+
         user = conn.execute(
-            "SELECT * FROM users WHERE username = ?",
+            """
+            SELECT *
+            FROM users
+            WHERE username = ?
+            """,
             (username,),
         ).fetchone()
 
@@ -181,23 +241,36 @@ def authenticate_user(username: str, password: str):
         return None
 
     try:
+
         valid = bcrypt.checkpw(
             password.encode("utf-8"),
             user["password"].encode("utf-8"),
         )
+
     except Exception:
+
         valid = False
 
-    return dict(user) if valid else None
+    if not valid:
+        return None
+
+    return dict(user)
 
 
-# ------------------------------------------------------------
+# ============================================================
 # SETTINGS
-# ------------------------------------------------------------
-def get_user_settings(user_id: int):
+# ============================================================
+
+def get_user_settings(user_id):
+
     with get_db_connection() as conn:
+
         row = conn.execute(
-            "SELECT * FROM settings WHERE user_id = ?",
+            """
+            SELECT *
+            FROM settings
+            WHERE user_id = ?
+            """,
             (user_id,),
         ).fetchone()
 
@@ -217,20 +290,23 @@ def get_user_settings(user_id: int):
 
 
 def update_user_settings(
-    user_id: int,
-    theme: str,
-    model: str,
-    gemini_key: str,
-    groq_key: str,
-    custom_prompt: str,
-    language: str,
-    voice_enabled: bool,
-    auto_send_voice: bool,
+    user_id,
+    theme,
+    model,
+    gemini_key,
+    groq_key,
+    custom_prompt,
+    language,
+    voice_enabled,
+    auto_send_voice,
 ):
+
     with get_db_connection() as conn:
+
         conn.execute(
             """
             UPDATE settings
+
             SET theme = ?,
                 default_model = ?,
                 api_key_gemini = ?,
@@ -239,6 +315,7 @@ def update_user_settings(
                 language = ?,
                 voice_enabled = ?,
                 auto_send_voice = ?
+
             WHERE user_id = ?
             """,
             (
@@ -253,26 +330,39 @@ def update_user_settings(
                 user_id,
             ),
         )
+
         conn.commit()
 
 
-# ------------------------------------------------------------
+# ============================================================
 # CONVERSATIONS
-# ------------------------------------------------------------
-def load_conversations(user_id: int, search_query: Optional[str] = None):
+# ============================================================
+
+def load_conversations(
+    user_id,
+    search_query=None,
+):
+
     with get_db_connection() as conn:
+
         if search_query:
+
             rows = conn.execute(
                 """
                 SELECT *
                 FROM conversations
                 WHERE user_id = ?
-                  AND title LIKE ?
+                AND title LIKE ?
                 ORDER BY updated_at DESC
                 """,
-                (user_id, f"%{search_query}%"),
+                (
+                    user_id,
+                    f"%{search_query}%",
+                ),
             ).fetchall()
+
         else:
+
             rows = conn.execute(
                 """
                 SELECT *
@@ -286,47 +376,96 @@ def load_conversations(user_id: int, search_query: Optional[str] = None):
     return [dict(row) for row in rows]
 
 
-def create_conversation(user_id: int, title: str = "New Chat"):
-    conversation_id = f"chat_{uuid.uuid4().hex}"
+def create_conversation(
+    user_id,
+    title="New Chat",
+):
+
+    conversation_id = (
+        "chat_" + uuid.uuid4().hex
+    )
+
     now = datetime.now().isoformat()
 
     with get_db_connection() as conn:
+
         conn.execute(
             """
-            INSERT INTO conversations (id, user_id, title, updated_at)
+            INSERT INTO conversations
+            (
+                id,
+                user_id,
+                title,
+                updated_at
+            )
             VALUES (?, ?, ?, ?)
             """,
-            (conversation_id, user_id, clean_text(title) or "New Chat", now),
+            (
+                conversation_id,
+                user_id,
+                clean_text(title) or "New Chat",
+                now,
+            ),
         )
+
         conn.commit()
 
     return conversation_id
 
 
-def rename_conversation(conversation_id: str, title: str):
+def rename_conversation(
+    conversation_id,
+    title,
+):
+
     with get_db_connection() as conn:
+
         conn.execute(
-            "UPDATE conversations SET title = ? WHERE id = ?",
-            (clean_text(title) or "New Chat", conversation_id),
+            """
+            UPDATE conversations
+            SET title = ?
+            WHERE id = ?
+            """,
+            (
+                clean_text(title) or "New Chat",
+                conversation_id,
+            ),
         )
+
         conn.commit()
 
 
-def delete_conversation(conversation_id: str):
+def delete_conversation(
+    conversation_id,
+):
+
     with get_db_connection() as conn:
+
         conn.execute(
-            "DELETE FROM messages WHERE conversation_id = ?",
+            """
+            DELETE FROM messages
+            WHERE conversation_id = ?
+            """,
             (conversation_id,),
         )
+
         conn.execute(
-            "DELETE FROM conversations WHERE id = ?",
+            """
+            DELETE FROM conversations
+            WHERE id = ?
+            """,
             (conversation_id,),
         )
+
         conn.commit()
 
 
-def load_messages(conversation_id: str):
+def load_messages(
+    conversation_id,
+):
+
     with get_db_connection() as conn:
+
         rows = conn.execute(
             """
             SELECT *
@@ -340,16 +479,33 @@ def load_messages(conversation_id: str):
     return [dict(row) for row in rows]
 
 
-def save_message(conversation_id: str, role: str, content: str):
+def save_message(
+    conversation_id,
+    role,
+    content,
+):
+
     now = datetime.now().isoformat()
 
     with get_db_connection() as conn:
+
         conn.execute(
             """
-            INSERT INTO messages (conversation_id, role, content, timestamp)
+            INSERT INTO messages
+            (
+                conversation_id,
+                role,
+                content,
+                timestamp
+            )
             VALUES (?, ?, ?, ?)
             """,
-            (conversation_id, role, content, now),
+            (
+                conversation_id,
+                role,
+                content,
+                now,
+            ),
         )
 
         conn.execute(
@@ -358,22 +514,72 @@ def save_message(conversation_id: str, role: str, content: str):
             SET updated_at = ?
             WHERE id = ?
             """,
-            (now, conversation_id),
+            (
+                now,
+                conversation_id,
+            ),
         )
 
         conn.commit()
 
 
-# ------------------------------------------------------------
-# FILE / DOCUMENT HELPERS
-# ------------------------------------------------------------
-def extract_text_from_zip(file_bytes: bytes) -> str:
+# ============================================================
+# FILE PROCESSING
+# ============================================================
+
+def extract_text_from_pdf(
+    file_bytes,
+):
+
+    try:
+
+        from pypdf import PdfReader
+
+        reader = PdfReader(
+            io.BytesIO(file_bytes)
+        )
+
+        pages = []
+
+        for page in reader.pages:
+
+            pages.append(
+                page.extract_text() or ""
+            )
+
+        result = "\n\n".join(
+            pages
+        ).strip()
+
+        return result or "No text found in PDF."
+
+    except ImportError:
+
+        return (
+            "PDF support requires pypdf. "
+            "Install it using: pip install pypdf"
+        )
+
+    except Exception as exc:
+
+        return f"PDF extraction failed: {exc}"
+
+
+def extract_text_from_zip(
+    file_bytes,
+):
+
     output = []
 
     try:
-        with zipfile.ZipFile(io.BytesIO(file_bytes)) as archive:
-            for name in archive.namelist():
-                lower = name.lower()
+
+        with zipfile.ZipFile(
+            io.BytesIO(file_bytes)
+        ) as archive:
+
+            for filename in archive.namelist():
+
+                lower = filename.lower()
 
                 if lower.endswith(
                     (
@@ -390,69 +596,81 @@ def extract_text_from_zip(file_bytes: bytes) -> str:
                         ".xml",
                         ".yaml",
                         ".yml",
+                        ".csv",
                     )
                 ):
+
                     try:
-                        text = archive.read(name).decode(
+
+                        content = archive.read(
+                            filename
+                        ).decode(
                             "utf-8",
-                            errors="ignore"
+                            errors="ignore",
                         )
+
                         output.append(
-                            f"\n--- File: {name} ---\n{text}"
+                            f"\n--- {filename} ---\n"
+                            f"{content}"
                         )
+
                     except Exception:
                         continue
 
         return "\n".join(output).strip()
 
     except zipfile.BadZipFile:
-        return "The uploaded ZIP file is invalid."
+
+        return "Invalid ZIP file."
 
 
-def extract_text_from_pdf(file_bytes: bytes) -> str:
-    try:
-        from pypdf import PdfReader
+def extract_uploaded_file(
+    uploaded_file,
+):
 
-        reader = PdfReader(io.BytesIO(file_bytes))
-        pages = []
-
-        for page in reader.pages:
-            pages.append(page.extract_text() or "")
-
-        text = "\n\n".join(pages).strip()
-        return text or "No extractable text was found in the PDF."
-
-    except ImportError:
-        return (
-            "PDF text extraction requires the 'pypdf' package. "
-            "Install it with: pip install pypdf"
-        )
-    except Exception as exc:
-        return f"PDF extraction failed: {exc}"
-
-
-def extract_uploaded_file(uploaded_file):
-    if not uploaded_file:
+    if uploaded_file is None:
         return "", None
 
     data = uploaded_file.getvalue()
-    name = uploaded_file.name.lower()
+
+    filename = uploaded_file.name.lower()
 
     image = None
 
-    if name.endswith((".png", ".jpg", ".jpeg", ".webp")):
+    if filename.endswith(
+        (
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".webp",
+        )
+    ):
+
         try:
-            image = Image.open(io.BytesIO(data))
+
+            image = Image.open(
+                io.BytesIO(data)
+            )
+
         except Exception:
+
             image = None
 
-    if name.endswith(".zip"):
-        return extract_text_from_zip(data), image
+    if filename.endswith(".pdf"):
 
-    if name.endswith(".pdf"):
-        return extract_text_from_pdf(data), image
+        return (
+            extract_text_from_pdf(data),
+            image,
+        )
 
-    if name.endswith(
+    if filename.endswith(".zip"):
+
+        return (
+            extract_text_from_zip(data),
+            image,
+        )
+
+    if filename.endswith(
         (
             ".txt",
             ".py",
@@ -470,42 +688,64 @@ def extract_uploaded_file(uploaded_file):
             ".csv",
         )
     ):
-        return data.decode("utf-8", errors="ignore"), image
+
+        return (
+            data.decode(
+                "utf-8",
+                errors="ignore",
+            ),
+            image,
+        )
 
     if image is not None:
-        return "Image attached for visual analysis.", image
+
+        return (
+            "Image attached for visual analysis.",
+            image,
+        )
 
     return (
-        "The file was uploaded, but this file type does not have built-in "
-        "text extraction in this version.",
+        "File uploaded successfully, but "
+        "this file type does not have built-in "
+        "text extraction.",
         None,
     )
 
 
-# ------------------------------------------------------------
-# GEMINI REST API
-# ------------------------------------------------------------
-def resolve_gemini_key(settings):
+# ============================================================
+# GEMINI API
+# ============================================================
+
+def get_gemini_api_key(
+    settings,
+):
+
     return (
-        clean_text(settings.get("api_key_gemini"))
-        or clean_text(os.environ.get("GEMINI_API_KEY"))
+        clean_text(
+            settings.get(
+                "api_key_gemini"
+            )
+        )
+        or clean_text(
+            os.environ.get(
+                "GEMINI_API_KEY"
+            )
+        )
     )
 
 
 def gemini_request(
-    api_key: str,
-    model: str,
+    api_key,
+    model,
     contents,
-    temperature: float = 0.4,
+    temperature=0.35,
 ):
-    """
-    Direct REST implementation so the app does not depend on a particular
-    google-generativeai SDK version.
-    """
+
     import requests
 
     url = (
-        "https://generativelanguage.googleapis.com/v1beta/models/"
+        "https://generativelanguage.googleapis.com/"
+        "v1beta/models/"
         f"{model}:generateContent"
     )
 
@@ -524,20 +764,30 @@ def gemini_request(
     )
 
     if response.status_code >= 400:
+
         try:
-            detail = response.json()
+            error_data = response.json()
         except Exception:
-            detail = response.text
+            error_data = response.text
 
         raise RuntimeError(
-            f"Gemini API error ({response.status_code}): {detail}"
+            f"Gemini API error "
+            f"({response.status_code}): "
+            f"{error_data}"
         )
 
     data = response.json()
 
-    candidates = data.get("candidates", [])
+    candidates = data.get(
+        "candidates",
+        [],
+    )
+
     if not candidates:
-        raise RuntimeError("Gemini returned no candidates.")
+
+        raise RuntimeError(
+            "Gemini returned no response."
+        )
 
     parts = (
         candidates[0]
@@ -545,250 +795,345 @@ def gemini_request(
         .get("parts", [])
     )
 
-    text_parts = [
+    answer = "".join(
         part.get("text", "")
         for part in parts
         if part.get("text")
-    ]
-
-    answer = "".join(text_parts).strip()
+    ).strip()
 
     if not answer:
-        raise RuntimeError("Gemini returned an empty response.")
+
+        raise RuntimeError(
+            "Gemini returned an empty answer."
+        )
 
     return answer
 
 
-def build_system_instruction(settings):
-    language = settings.get("language", "English")
+def build_system_instruction(
+    settings,
+):
+
+    language = settings.get(
+        "language",
+        "English",
+    )
 
     if language == "Urdu":
-        language_rule = (
-            "Answer naturally in Urdu script. Keep important technical "
-            "terms in English in parentheses when useful."
+
+        language_instruction = (
+            "Answer in natural Urdu. "
+            "Keep important technical terms "
+            "in English in parentheses when useful."
         )
+
     elif language == "English + Urdu":
-        language_rule = (
-            "Give a clear English explanation first, then provide a "
-            "detailed Urdu explanation under an 'اردو وضاحت' heading."
+
+        language_instruction = (
+            "First answer in clear English. "
+            "Then provide a detailed Urdu explanation "
+            "under the heading 'اردو وضاحت'."
         )
+
     else:
-        language_rule = "Answer in clear English."
 
-    base = f"""
-You are Fenix AI, a fast, professional general-purpose AI assistant.
+        language_instruction = (
+            "Answer in clear English."
+        )
 
-{language_rule}
+    instruction = f"""
+You are Fenix AI, a professional AI assistant.
 
-Be accurate, concise when a short answer is enough, and detailed when the
-user asks for detail. Explain technical concepts step by step.
+{language_instruction}
 
-Do not invent facts, sources, measurements, or capabilities.
+Give accurate, useful and well-structured answers.
 
-If information is uncertain, say so.
+Use headings and bullet points when helpful.
 
-For military and defense topics, provide educational, historical and
-high-level technical information. Do not provide operational targeting,
-weapon firing instructions, weapon construction instructions, live
-military intelligence, or instructions for harming people.
+Explain difficult concepts step-by-step.
 
-If the user asks about uploaded files, use the supplied file context and
-clearly distinguish file-derived information from general knowledge.
+Never pretend to have access to classified information,
+real military systems, live radar feeds, private databases,
+or restricted intelligence.
 
-Current date: {datetime.now().strftime("%Y-%m-%d")}.
+For defense-related subjects, provide educational,
+historical and high-level technical information.
+
+Do not provide operational targeting instructions,
+weapon firing instructions, instructions for constructing
+weapons, or instructions intended to harm people.
+
+Do not invent facts or sources.
+
+If you are uncertain, clearly say that you are uncertain.
+
+If the user provides a file, use the file context supplied
+by the application.
+
+Current date:
+{datetime.now().strftime("%Y-%m-%d")}
 """
 
-    custom = clean_text(settings.get("custom_sys_prompt"))
-    if custom:
-        base += f"\nAdditional user instruction:\n{custom}\n"
+    custom_prompt = clean_text(
+        settings.get(
+            "custom_sys_prompt"
+        )
+    )
 
-    return base.strip()
+    if custom_prompt:
+
+        instruction += (
+            "\n\nAdditional user preference:\n"
+            + custom_prompt
+        )
+
+    return instruction.strip()
 
 
-def build_gemini_contents(messages, system_instruction, file_context=""):
+def build_gemini_contents(
+    messages,
+    settings,
+    file_context="",
+    image=None,
+):
+
     contents = []
 
-    contents.append({
-        "role": "user",
-        "parts": [
-            {
-                "text": (
-                    "SYSTEM INSTRUCTION:\n"
-                    + system_instruction
-                    + "\n\n"
-                    "Follow these instructions for the conversation."
-                )
-            }
-        ],
-    })
+    system_instruction = (
+        build_system_instruction(
+            settings
+        )
+    )
 
-    if file_context:
-        contents.append({
+    contents.append(
+        {
             "role": "user",
             "parts": [
                 {
-                    "text": (
-                        "UPLOADED FILE CONTEXT:\n"
-                        + file_context[:50000]
-                    )
+                    "text":
+                    "SYSTEM INSTRUCTIONS:\n"
+                    + system_instruction
                 }
             ],
-        })
+        }
+    )
+
+    if file_context:
+
+        contents.append(
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "text":
+                        "UPLOADED FILE CONTEXT:\n"
+                        + file_context[:50000]
+                    }
+                ],
+            }
+        )
 
     for message in messages:
-        role = "model" if message["role"] == "assistant" else "user"
 
-        contents.append({
-            "role": role,
-            "parts": [
-                {"text": message["content"]}
-            ],
-        })
+        role = (
+            "model"
+            if message["role"] == "assistant"
+            else "user"
+        )
+
+        contents.append(
+            {
+                "role": role,
+                "parts": [
+                    {
+                        "text":
+                        message["content"]
+                    }
+                ],
+            }
+        )
+
+    if image is not None:
+
+        image_buffer = io.BytesIO()
+
+        image.save(
+            image_buffer,
+            format="PNG",
+        )
+
+        encoded = base64.b64encode(
+            image_buffer.getvalue()
+        ).decode("utf-8")
+
+        if contents:
+
+            contents[-1]["parts"].append(
+                {
+                    "inline_data": {
+                        "mime_type": "image/png",
+                        "data": encoded,
+                    }
+                }
+            )
 
     return contents
 
 
-def generate_gemini_answer(
+def generate_answer(
     settings,
     messages,
     file_context="",
     image=None,
 ):
-    api_key = resolve_gemini_key(settings)
+
+    api_key = get_gemini_api_key(
+        settings
+    )
 
     if not api_key:
+
         raise RuntimeError(
             "Gemini API key is not configured. "
-            "Open Settings → Gemini AI and add your API key."
+            "Open Settings → Gemini AI and add your key."
         )
 
     model = clean_text(
-        settings.get("default_model") or DEFAULT_MODEL
+        settings.get(
+            "default_model"
+        )
+        or DEFAULT_MODEL
     )
 
     contents = build_gemini_contents(
         messages,
-        build_system_instruction(settings),
+        settings,
         file_context,
+        image,
     )
-
-    # Add an image to the latest user message when present.
-    if image is not None and contents:
-        try:
-            image_buffer = io.BytesIO()
-            image.save(image_buffer, format="PNG")
-
-            encoded = base64.b64encode(
-                image_buffer.getvalue()
-            ).decode("utf-8")
-
-            contents[-1]["parts"].append({
-                "inline_data": {
-                    "mime_type": "image/png",
-                    "data": encoded,
-                }
-            })
-
-        except Exception as exc:
-            raise RuntimeError(
-                f"Could not prepare the image for Gemini: {exc}"
-            )
 
     return gemini_request(
         api_key,
         model,
         contents,
-        temperature=0.35,
     )
 
 
-def transcribe_audio_with_gemini(
-    audio_bytes: bytes,
-    mime_type: str,
+# ============================================================
+# VOICE TRANSCRIPTION
+# ============================================================
+
+def transcribe_audio(
+    audio_bytes,
+    mime_type,
     settings,
 ):
-    """
-    Real voice-input path:
-    Streamlit records microphone audio -> Gemini receives audio -> Gemini
-    returns the transcript -> transcript is placed into the chat input.
 
-    This avoids relying on a browser-specific Web Speech API implementation.
-    """
-    api_key = resolve_gemini_key(settings)
-
-    if not api_key:
-        raise RuntimeError(
-            "Gemini API key is required for voice transcription."
-        )
-
-    model = clean_text(
-        settings.get("default_model") or DEFAULT_MODEL
+    api_key = get_gemini_api_key(
+        settings
     )
 
-    language = settings.get("language", "English")
+    if not api_key:
+
+        raise RuntimeError(
+            "Gemini API key is required "
+            "for voice transcription."
+        )
+
+    language = settings.get(
+        "language",
+        "English",
+    )
 
     if language == "Urdu":
-        language_instruction = (
-            "Transcribe the spoken audio into Urdu script."
+
+        instruction = (
+            "Transcribe the speech into Urdu script."
         )
+
     elif language == "English + Urdu":
-        language_instruction = (
-            "Transcribe the speech faithfully. Preserve English and Urdu "
-            "words in the language actually spoken."
+
+        instruction = (
+            "Transcribe the speech exactly, "
+            "preserving English and Urdu words."
         )
+
     else:
-        language_instruction = (
-            "Transcribe the spoken audio into English."
+
+        instruction = (
+            "Transcribe the speech into English."
         )
 
     prompt = f"""
 You are a speech-to-text engine.
 
-{language_instruction}
+{instruction}
 
 Return ONLY the transcription.
-Do not add explanations.
-Do not summarize.
-Do not add quotation marks.
-Do not invent words.
 
-If the audio is unclear, return the words you can confidently recognize.
+Do not explain anything.
+
+Do not summarize.
+
+Do not add quotation marks.
+
+Do not invent words.
 """
 
-    encoded = base64.b64encode(audio_bytes).decode("utf-8")
+    encoded = base64.b64encode(
+        audio_bytes
+    ).decode("utf-8")
 
-    contents = [{
-        "role": "user",
-        "parts": [
-            {"text": prompt},
-            {
-                "inline_data": {
-                    "mime_type": mime_type or "audio/wav",
-                    "data": encoded,
-                }
-            },
-        ],
-    }]
+    contents = [
+        {
+            "role": "user",
+            "parts": [
+                {
+                    "text": prompt
+                },
+                {
+                    "inline_data": {
+                        "mime_type":
+                            mime_type or "audio/wav",
+                        "data":
+                            encoded,
+                    },
+                },
+            ],
+        }
+    ]
 
     return gemini_request(
         api_key,
-        model,
+        clean_text(
+            settings.get(
+                "default_model"
+            )
+            or DEFAULT_MODEL
+        ),
         contents,
         temperature=0.0,
-    ).strip()
+    )
 
 
-# ------------------------------------------------------------
-# TEXT-TO-SPEECH
-# ------------------------------------------------------------
-def text_to_speech(text: str, language: str):
+# ============================================================
+# TEXT TO SPEECH
+# ============================================================
+
+def text_to_speech(
+    text,
+    language,
+):
+
     try:
+
         from gtts import gTTS
 
-        if language == "Urdu":
-            lang = "ur"
-        else:
-            lang = "en"
+        lang = (
+            "ur"
+            if language == "Urdu"
+            else "en"
+        )
 
         buffer = io.BytesIO()
 
@@ -799,130 +1144,281 @@ def text_to_speech(text: str, language: str):
         ).write_to_fp(buffer)
 
         buffer.seek(0)
+
         return buffer.getvalue()
 
     except Exception:
+
         return None
 
 
-# ------------------------------------------------------------
-# EXPORTS
-# ------------------------------------------------------------
+# ============================================================
+# PDF EXPORT
+# ============================================================
+
+def export_to_pdf(messages):
+
+    """
+    Safe PDF exporter.
+
+    This version intentionally does NOT use re.sub().
+    It also manually breaks long continuous text so
+    FPDF2 cannot fail with:
+
+    FPDFException:
+    Not enough horizontal space to render a single character
+    """
+
+    if FPDF is None:
+        return None
+
+    pdf = FPDF()
+
+    pdf.set_auto_page_break(
+        auto=True,
+        margin=15,
+    )
+
+    pdf.add_page()
+
+    pdf.set_font(
+        "Arial",
+        size=14,
+    )
+
+    pdf.cell(
+        0,
+        10,
+        "Fenix AI - Chat Transcript",
+        ln=True,
+        align="C",
+    )
+
+    pdf.ln(6)
+
+    try:
+
+        from fpdf.enums import WrapMode
+
+        wrap_mode = WrapMode.CHAR
+
+    except Exception:
+
+        wrap_mode = "CHAR"
+
+    for message in messages:
+
+        role = str(
+            message.get(
+                "role",
+                "",
+            )
+        ).upper()
+
+        timestamp = str(
+            message.get(
+                "timestamp",
+                "",
+            )
+        )
+
+        header = (
+            f"[{timestamp}] {role}"
+        )
+
+        # Convert header to an Arial-safe encoding.
+        safe_header = header.encode(
+            "latin-1",
+            errors="replace",
+        ).decode(
+            "latin-1"
+        )
+
+        content = str(
+            message.get(
+                "content",
+                "",
+            )
+        )
+
+        # Remove control characters WITHOUT regex.
+        cleaned = []
+
+        for char in content:
+
+            code = ord(char)
+
+            if (
+                code == 9
+                or code == 10
+                or code == 13
+                or code >= 32
+            ):
+
+                cleaned.append(char)
+
+            else:
+
+                cleaned.append(" ")
+
+        content = "".join(cleaned)
+
+        # Normalize newlines.
+        content = content.replace(
+            "\r\n",
+            "\n",
+        )
+
+        content = content.replace(
+            "\r",
+            "\n",
+        )
+
+        # Hard-wrap every long line.
+        #
+        # This protects against:
+        # - URLs
+        # - hashes
+        # - code
+        # - JSON
+        # - long IDs
+        # - long unbroken text
+        wrapped_lines = []
+
+        for line in content.split("\n"):
+
+            if len(line) <= 70:
+
+                wrapped_lines.append(
+                    line
+                )
+
+            else:
+
+                for i in range(
+                    0,
+                    len(line),
+                    70,
+                ):
+
+                    wrapped_lines.append(
+                        line[i:i + 70]
+                    )
+
+        content = "\n".join(
+            wrapped_lines
+        )
+
+        safe_content = content.encode(
+            "latin-1",
+            errors="replace",
+        ).decode(
+            "latin-1"
+        )
+
+        if not safe_content.strip():
+
+            safe_content = "(empty message)"
+
+        pdf.set_font(
+            "Arial",
+            size=9,
+        )
+
+        pdf.multi_cell(
+            0,
+            6,
+            safe_header,
+            wrapmode=wrap_mode,
+        )
+
+        pdf.set_font(
+            "Arial",
+            size=10,
+        )
+
+        pdf.multi_cell(
+            0,
+            6,
+            safe_content,
+            wrapmode=wrap_mode,
+        )
+
+        pdf.ln(3)
+
+    output = pdf.output(
+        dest="S"
+    )
+
+    if isinstance(
+        output,
+        str,
+    ):
+
+        return output.encode(
+            "latin-1"
+        )
+
+    return bytes(output)
+
+
+# ============================================================
+# TXT EXPORT
+# ============================================================
+
 def export_to_txt(messages):
-    output = [
+
+    lines = [
         "FENIX AI - CHAT EXPORT",
         "======================",
         "",
     ]
 
     for message in messages:
-        output.extend([
-            f"[{message['timestamp']}] {message['role'].upper()}:",
-            message["content"],
-            "",
-        ])
 
-    return "\n".join(output).encode("utf-8")
-
-
-def export_to_pdf(messages):
-    """
-    Robust PDF exporter.
-
-    Prevents fpdf2 failures caused by very long unbroken strings such as
-    URLs, code, JSON, hashes, or other whitespace-free text.
-    """
-    if FPDF is None:
-        return None
-
-    pdf = FPDF()
-    pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.add_page()
-
-    pdf.set_font("Arial", size=14)
-    pdf.cell(0, 10, "Fenix AI - Chat Transcript", ln=True, align="C")
-    pdf.ln(6)
-
-    try:
-        from fpdf.enums import WrapMode
-        char_wrap = WrapMode.CHAR
-    except Exception:
-        char_wrap = "CHAR"
-
-    for message in messages:
-        role = str(message.get("role", "")).upper()
-        timestamp = str(message.get("timestamp", ""))
-        safe_header = f"[{timestamp}] {role}"
-
-        raw_content = str(message.get("content", ""))
-        raw_content = re.sub(
-            r"[\\x00-\\x08\\x0b\\x0c\\x0e-\\x1f\\x7f]",
-            " ",
-            raw_content,
+        lines.append(
+            f"[{message['timestamp']}] "
+            f"{message['role'].upper()}:"
         )
-        raw_content = raw_content.replace("\r\n", "\n").replace("\r", "\n")
 
-        # Hard-break extremely long whitespace-free tokens.
-        raw_content = re.sub(r"(\\S{90})(?=\\S)", r"\\1\n", raw_content)
+        lines.append(
+            message["content"]
+        )
 
-        safe_content = raw_content.encode(
-            "latin-1", errors="replace"
-        ).decode("latin-1")
+        lines.append("")
 
-        pdf.set_font("Arial", size=9)
-        pdf.multi_cell(0, 6, safe_header, wrapmode=char_wrap)
+    return "\n".join(
+        lines
+    ).encode(
+        "utf-8"
+    )
 
-        pdf.set_font("Arial", size=10)
-        try:
-            pdf.multi_cell(
-                0,
-                6,
-                safe_content or "(empty message)",
-                wrapmode=char_wrap,
-            )
-        except Exception:
-            # Absolute fallback for unusual fpdf2 text/layout cases.
-            chunks = []
-            for line in safe_content.split("\n"):
-                if not line:
-                    chunks.append("")
-                else:
-                    chunks.extend(
-                        line[i:i + 60]
-                        for i in range(0, len(line), 60)
-                    )
 
-            pdf.multi_cell(
-                0,
-                6,
-                "\n".join(chunks) or "(empty message)",
-                wrapmode=char_wrap,
-            )
-
-        pdf.ln(3)
-
-    output = pdf.output(dest="S")
-
-    if isinstance(output, str):
-        return output.encode("latin-1")
-
-    return bytes(output)
+# ============================================================
+# ZIP EXPORT
+# ============================================================
 
 def export_to_zip(messages):
+
     buffer = io.BytesIO()
 
     with zipfile.ZipFile(
         buffer,
         "w",
-        compression=zipfile.ZIP_DEFLATED,
+        zipfile.ZIP_DEFLATED,
     ) as archive:
+
         archive.writestr(
             "chat_transcript.txt",
             export_to_txt(messages),
         )
 
-        pdf_data = export_to_pdf(messages)
+        pdf_data = export_to_pdf(
+            messages
+        )
+
         if pdf_data:
+
             archive.writestr(
                 "chat_transcript.pdf",
                 pdf_data,
@@ -931,64 +1427,62 @@ def export_to_zip(messages):
     return buffer.getvalue()
 
 
-# ------------------------------------------------------------
+# ============================================================
 # SESSION STATE
-# ------------------------------------------------------------
-DEFAULT_SETTINGS = {
-    "theme": "dark",
-    "default_model": DEFAULT_MODEL,
-    "api_key_gemini": "",
-    "api_key_groq": "",
-    "custom_sys_prompt": "",
-    "language": "English",
-    "voice_enabled": 1,
-    "auto_send_voice": 0,
-}
+# ============================================================
 
 if "user" not in st.session_state:
+
     st.session_state.user = None
 
 if "settings" not in st.session_state:
-    st.session_state.settings = DEFAULT_SETTINGS.copy()
+
+    st.session_state.settings = {}
 
 if "current_conversation_id" not in st.session_state:
+
     st.session_state.current_conversation_id = None
 
 if "uploaded_file_context" not in st.session_state:
+
     st.session_state.uploaded_file_context = ""
 
 if "attached_image" not in st.session_state:
+
     st.session_state.attached_image = None
 
 if "last_transcript" not in st.session_state:
+
     st.session_state.last_transcript = ""
 
-if "voice_error" not in st.session_state:
-    st.session_state.voice_error = ""
 
-if "tts_audio" not in st.session_state:
-    st.session_state.tts_audio = None
-
-
-# ------------------------------------------------------------
+# ============================================================
 # THEME
-# ------------------------------------------------------------
-def apply_theme_styles():
-    theme = st.session_state.settings.get("theme", "dark")
+# ============================================================
+
+def apply_theme():
+
+    theme = st.session_state.settings.get(
+        "theme",
+        "dark",
+    )
 
     if theme == "light":
+
         background = "#ffffff"
-        surface = "#f6f7f9"
+        surface = "#f5f7fa"
         surface2 = "#ffffff"
         text = "#111111"
-        muted = "#606770"
-        border = "#dfe3e8"
+        muted = "#667085"
+        border = "#d9dee7"
         accent = "#1769ff"
+
     else:
+
         background = "#0b0f14"
         surface = "#111820"
         surface2 = "#151e27"
-        text = "#f2f5f8"
+        text = "#f5f7fa"
         muted = "#9aa8b5"
         border = "#263442"
         accent = "#39b7ff"
@@ -996,7 +1490,9 @@ def apply_theme_styles():
     st.markdown(
         f"""
         <style>
-        html, body,
+
+        html,
+        body,
         [data-testid="stAppViewContainer"] {{
             background: {background};
             color: {text};
@@ -1012,290 +1508,385 @@ def apply_theme_styles():
         }}
 
         .block-container {{
+            max-width: 1500px;
             padding-top: 2rem;
             padding-bottom: 4rem;
-            max-width: 1500px;
-        }}
-
-        h1, h2, h3, h4, h5, p, label, span {{
-            color: {text};
         }}
 
         .fenix-card {{
             background: {surface2};
             border: 1px solid {border};
-            border-radius: 14px;
-            padding: 18px;
-            margin-bottom: 14px;
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 15px;
         }}
 
-        .status-pill {{
+        .status {{
             display: inline-block;
             border: 1px solid {border};
             border-radius: 999px;
-            padding: 5px 10px;
-            font-size: 12px;
-            color: {muted};
+            padding: 5px 11px;
             margin-right: 6px;
+            color: {muted};
+            font-size: 12px;
         }}
 
-        .chat-user {{
+        .user-message {{
             background: {surface2};
             border: 1px solid {border};
-            border-radius: 14px;
+            border-radius: 15px;
             padding: 16px;
-            margin: 8px 0;
+            margin: 10px 0;
         }}
 
-        .chat-assistant {{
+        .assistant-message {{
             background: {surface};
-            border: 1px solid {border};
             border-left: 4px solid {accent};
-            border-radius: 14px;
+            border-top: 1px solid {border};
+            border-right: 1px solid {border};
+            border-bottom: 1px solid {border};
+            border-radius: 15px;
             padding: 16px;
-            margin: 8px 0 18px 0;
+            margin: 10px 0 20px 0;
         }}
 
-        .small-muted {{
-            color: {muted} !important;
-            font-size: 0.88rem;
-        }}
-
-        div.stButton > button {{
-            border-radius: 10px;
-            border: 1px solid {border};
-            min-height: 42px;
-        }}
-
-        div[data-testid="stChatInput"] {{
-            border-radius: 14px;
-        }}
-
-        .voice-ready {{
-            border: 1px solid {accent};
-            border-radius: 12px;
-            padding: 10px 12px;
-            margin: 8px 0;
-        }}
         </style>
         """,
         unsafe_allow_html=True,
     )
 
 
-# ------------------------------------------------------------
-# LOGIN SCREEN
-# ------------------------------------------------------------
+# ============================================================
+# LOGIN
+# ============================================================
+
 if st.session_state.user is None:
-    apply_theme_styles()
+
+    st.session_state.settings = {
+        "theme": "dark"
+    }
+
+    apply_theme()
 
     st.markdown(
         """
-        <div style="text-align:center;padding:35px 0 20px 0;">
-            <div style="font-size:54px;">⚡</div>
-            <h1 style="margin-bottom:4px;">Fenix AI</h1>
-            <p>Personal AI workspace with Gemini, files, voice and chat history.</p>
+        <div style="
+            text-align:center;
+            padding:45px 0 25px 0;
+        ">
+            <div style="font-size:60px;">⚡</div>
+            <h1>Fenix AI</h1>
+            <p>
+                AI command center powered by Gemini
+            </p>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    tabs = st.tabs(["Sign In", "Create Account"])
+    login_tab, register_tab = st.tabs(
+        [
+            "Sign In",
+            "Create Account",
+        ]
+    )
 
-    with tabs[0]:
+    with login_tab:
+
         with st.form("login_form"):
-            username = st.text_input("Username")
+
+            username = st.text_input(
+                "Username"
+            )
+
             password = st.text_input(
                 "Password",
                 type="password",
             )
+
             submitted = st.form_submit_button(
                 "Access Dashboard",
                 use_container_width=True,
             )
 
         if submitted:
-            user = authenticate_user(username, password)
+
+            user = authenticate_user(
+                username,
+                password,
+            )
 
             if user:
-                st.session_state.user = user
-                st.session_state.settings = get_user_settings(user["id"])
-                st.session_state.current_conversation_id = None
-                st.rerun()
-            else:
-                st.error("Invalid username or password.")
 
-    with tabs[1]:
+                st.session_state.user = user
+
+                st.session_state.settings = (
+                    get_user_settings(
+                        user["id"]
+                    )
+                )
+
+                st.session_state.current_conversation_id = None
+
+                st.rerun()
+
+            else:
+
+                st.error(
+                    "Invalid username or password."
+                )
+
+    with register_tab:
+
         with st.form("register_form"):
-            new_username = st.text_input("Choose Username")
+
+            new_username = st.text_input(
+                "Choose Username"
+            )
+
             new_password = st.text_input(
-                "Choose Password",
+                "Password",
                 type="password",
             )
+
             confirm_password = st.text_input(
                 "Confirm Password",
                 type="password",
             )
+
             submitted = st.form_submit_button(
                 "Create Account",
                 use_container_width=True,
             )
 
         if submitted:
+
             if new_password != confirm_password:
-                st.error("Passwords do not match.")
+
+                st.error(
+                    "Passwords do not match."
+                )
+
             else:
+
                 success, message = register_user(
                     new_username,
                     new_password,
                 )
 
                 if success:
-                    st.success(message)
+
+                    st.success(
+                        message
+                    )
+
                 else:
-                    st.error(message)
+
+                    st.error(
+                        message
+                    )
 
     st.stop()
 
 
-# ------------------------------------------------------------
-# CURRENT USER
-# ------------------------------------------------------------
-current_user = st.session_state.user
-st.session_state.settings = get_user_settings(current_user["id"])
+# ============================================================
+# LOAD USER
+# ============================================================
+
+user = st.session_state.user
+
+st.session_state.settings = (
+    get_user_settings(
+        user["id"]
+    )
+)
+
 settings = st.session_state.settings
 
-apply_theme_styles()
+apply_theme()
 
 
-# ------------------------------------------------------------
+# ============================================================
 # SIDEBAR
-# ------------------------------------------------------------
+# ============================================================
+
 with st.sidebar:
+
     st.title("⚡ Fenix AI")
-    st.caption(f"User: **{current_user['username']}**")
 
-    gemini_ready = bool(resolve_gemini_key(settings))
+    st.caption(
+        f"User: {user['username']}"
+    )
 
-    if gemini_ready:
-        st.success("Gemini AI: Connected")
+    if get_gemini_api_key(settings):
+
+        st.success(
+            "Gemini AI: Connected"
+        )
+
     else:
-        st.warning("Gemini AI: Not configured")
+
+        st.warning(
+            "Gemini AI: Not configured"
+        )
 
     st.divider()
 
     col1, col2 = st.columns(2)
 
     with col1:
+
         if st.button(
             "➕ New Chat",
             use_container_width=True,
         ):
-            new_id = create_conversation(
-                current_user["id"],
-                f"Session {datetime.now().strftime('%b %d, %H:%M')}",
+
+            new_chat = create_conversation(
+                user["id"],
+                "New Chat",
             )
-            st.session_state.current_conversation_id = new_id
+
+            st.session_state.current_conversation_id = (
+                new_chat
+            )
+
             st.session_state.uploaded_file_context = ""
             st.session_state.attached_image = None
             st.session_state.last_transcript = ""
+
             st.rerun()
 
     with col2:
+
         if st.button(
-            "🚪 Sign Out",
+            "🚪 Logout",
             use_container_width=True,
         ):
+
             st.session_state.user = None
             st.session_state.current_conversation_id = None
+
             st.rerun()
 
     st.divider()
 
-    search_q = st.text_input(
-        "🔍 Search conversations",
-        placeholder="Search...",
+    search = st.text_input(
+        "🔍 Search chats",
+        placeholder="Search conversations...",
     )
 
     conversations = load_conversations(
-        current_user["id"],
-        search_q,
+        user["id"],
+        search,
     )
 
     if conversations:
-        st.subheader("Conversations")
+
+        st.subheader(
+            "Conversations"
+        )
 
         for conversation in conversations:
+
             active = (
                 conversation["id"]
                 == st.session_state.current_conversation_id
             )
 
-            button_label = (
-                ("🟢 " if active else "💬 ")
-                + conversation["title"][:32]
+            prefix = (
+                "🟢 "
+                if active
+                else "💬 "
             )
 
             if st.button(
-                button_label,
-                key=f"open_{conversation['id']}",
+                prefix
+                + conversation["title"][:35],
+                key="open_"
+                + conversation["id"],
                 use_container_width=True,
             ):
-                st.session_state.current_conversation_id = conversation["id"]
-                st.session_state.last_transcript = ""
+
+                st.session_state.current_conversation_id = (
+                    conversation["id"]
+                )
+
                 st.rerun()
 
-            delete_col, rename_col = st.columns(2)
+            d1, d2 = st.columns(2)
 
-            with delete_col:
+            with d1:
+
                 if st.button(
                     "🗑️",
-                    key=f"delete_{conversation['id']}",
+                    key="delete_"
+                    + conversation["id"],
                     use_container_width=True,
                 ):
-                    delete_conversation(conversation["id"])
+
+                    delete_conversation(
+                        conversation["id"]
+                    )
 
                     if (
                         st.session_state.current_conversation_id
                         == conversation["id"]
                     ):
+
                         st.session_state.current_conversation_id = None
 
                     st.rerun()
 
-            with rename_col:
+            with d2:
+
                 if st.button(
                     "✏️",
-                    key=f"rename_{conversation['id']}",
+                    key="rename_"
+                    + conversation["id"],
                     use_container_width=True,
                 ):
-                    st.session_state[f"rename_mode_{conversation['id']}"] = True
+
+                    st.session_state[
+                        "rename_"
+                        + conversation["id"]
+                    ] = True
 
             if st.session_state.get(
-                f"rename_mode_{conversation['id']}",
+                "rename_"
+                + conversation["id"],
                 False,
             ):
+
                 new_title = st.text_input(
                     "New title",
                     value=conversation["title"],
-                    key=f"title_input_{conversation['id']}",
+                    key="title_"
+                    + conversation["id"],
                 )
 
                 if st.button(
-                    "Save title",
-                    key=f"save_title_{conversation['id']}",
+                    "Save",
+                    key="save_"
+                    + conversation["id"],
                 ):
+
                     rename_conversation(
                         conversation["id"],
                         new_title,
                     )
+
                     st.session_state[
-                        f"rename_mode_{conversation['id']}"
+                        "rename_"
+                        + conversation["id"]
                     ] = False
+
                     st.rerun()
 
     else:
-        st.info("No conversations yet. Create your first chat.")
+
+        st.info(
+            "No conversations yet."
+        )
 
     st.divider()
 
@@ -1311,34 +1902,64 @@ with st.sidebar:
     )
 
 
-# ------------------------------------------------------------
-# AUTO-CREATE / SELECT CHAT
-# ------------------------------------------------------------
-if page in ("💬 Chat", "🎙️ Voice", "📎 Files"):
+# ============================================================
+# AUTO SELECT CHAT
+# ============================================================
+
+if page in (
+    "💬 Chat",
+    "🎙️ Voice",
+    "📎 Files",
+):
+
     if not st.session_state.current_conversation_id:
-        existing = load_conversations(current_user["id"])
+
+        existing = load_conversations(
+            user["id"]
+        )
 
         if existing:
-            st.session_state.current_conversation_id = existing[0]["id"]
+
+            st.session_state.current_conversation_id = (
+                existing[0]["id"]
+            )
+
         else:
-            st.session_state.current_conversation_id = create_conversation(
-                current_user["id"],
-                f"Session {datetime.now().strftime('%b %d, %H:%M')}",
+
+            st.session_state.current_conversation_id = (
+                create_conversation(
+                    user["id"],
+                    "New Chat",
+                )
             )
 
         st.rerun()
 
 
-# ------------------------------------------------------------
-# CHAT PAGE
-# ------------------------------------------------------------
+# ============================================================
+# CHAT
+# ============================================================
+
 if page == "💬 Chat":
-    st.title("JARVIS / Fenix AI Command Center")
+
+    st.title(
+        "JARVIS / Fenix AI Command Center"
+    )
 
     st.markdown(
-        '<span class="status-pill">AI ENGINE: GEMINI</span>'
-        '<span class="status-pill">DATABASE: ONLINE</span>'
-        '<span class="status-pill">VOICE: AVAILABLE</span>',
+        """
+        <span class="status">
+        AI ENGINE: GEMINI
+        </span>
+
+        <span class="status">
+        DATABASE: ONLINE
+        </span>
+
+        <span class="status">
+        VOICE: READY
+        </span>
+        """,
         unsafe_allow_html=True,
     )
 
@@ -1349,46 +1970,64 @@ if page == "💬 Chat":
     )
 
     if not messages:
+
         st.markdown(
             """
             <div class="fenix-card">
-                <h3>Welcome</h3>
-                <p>
-                Ask anything you need help with. Fenix AI can answer,
-                explain, summarize, compare, analyze supported files,
-                and respond in English or Urdu.
-                </p>
+
+            <h3>Welcome to Fenix AI</h3>
+
+            <p>
+            Ask questions, analyze supported files,
+            use English or Urdu, and use the Gemini
+            AI engine to generate responses.
+            </p>
+
             </div>
             """,
             unsafe_allow_html=True,
         )
 
     for message in messages:
+
         if message["role"] == "user":
+
             st.markdown(
                 f"""
-                <div class="chat-user">
-                    <strong>You</strong><br><br>
-                    {message["content"]}
+                <div class="user-message">
+
+                <strong>You</strong>
+
+                <br><br>
+
+                {message["content"]}
+
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
+
         else:
+
             st.markdown(
                 f"""
-                <div class="chat-assistant">
-                    <strong>⚡ JARVIS</strong><br><br>
-                    {message["content"]}
+                <div class="assistant-message">
+
+                <strong>⚡ JARVIS</strong>
+
+                <br><br>
+
+                {message["content"]}
+
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
 
     if st.session_state.uploaded_file_context:
+
         st.info(
-            "A file is attached to the current chat. "
-            "JARVIS will use its extracted context."
+            "File context is attached to this conversation."
         )
 
     prompt = st.chat_input(
@@ -1396,22 +2035,28 @@ if page == "💬 Chat":
     )
 
     if prompt:
+
         prompt = prompt.strip()
 
         if prompt:
+
             save_message(
                 st.session_state.current_conversation_id,
                 "user",
                 prompt,
             )
 
-            with st.spinner("JARVIS is thinking..."):
+            with st.spinner(
+                "JARVIS is thinking..."
+            ):
+
                 try:
+
                     current_messages = load_messages(
                         st.session_state.current_conversation_id
                     )
 
-                    answer = generate_gemini_answer(
+                    answer = generate_answer(
                         settings,
                         current_messages,
                         st.session_state.uploaded_file_context,
@@ -1419,7 +2064,11 @@ if page == "💬 Chat":
                     )
 
                 except Exception as exc:
-                    answer = f"⚠️ {exc}"
+
+                    answer = (
+                        "⚠️ "
+                        + str(exc)
+                    )
 
             save_message(
                 st.session_state.current_conversation_id,
@@ -1430,115 +2079,147 @@ if page == "💬 Chat":
             st.rerun()
 
 
-# ------------------------------------------------------------
-# VOICE PAGE
-# ------------------------------------------------------------
+# ============================================================
+# VOICE
+# ============================================================
+
 elif page == "🎙️ Voice":
-    st.title("🎙️ JARVIS Voice Input")
+
+    st.title(
+        "🎙️ JARVIS Voice Input"
+    )
 
     st.markdown(
         """
         <div class="fenix-card">
-            <h3>Real microphone input</h3>
-            <p>
-            Click the microphone control below, speak your question,
-            and JARVIS will use Gemini to transcribe the recording.
-            The transcript is then placed into the chat workflow.
-            </p>
+
+        <h3>Real Voice Input</h3>
+
+        <p>
+        Record your voice, send the audio to Gemini
+        for transcription, review the recognized text,
+        and send it to JARVIS.
+        </p>
+
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    if not resolve_gemini_key(settings):
+    if not get_gemini_api_key(settings):
+
         st.warning(
-            "Add your Gemini API key in Settings before using voice input."
+            "Configure your Gemini API key first."
         )
 
-    language = settings.get("language", "English")
-
-    if language == "Urdu":
-        st.info("Voice mode: Urdu")
-    elif language == "English + Urdu":
-        st.info("Voice mode: English + Urdu")
-    else:
-        st.info("Voice mode: English")
-
-    st.markdown("### Step 1 — Record")
-
-    audio = st.audio_input(
-        "🎙️ Start recording",
-        key="jarvis_voice_input",
+    language = settings.get(
+        "language",
+        "English",
     )
 
-    if audio:
-        st.audio(audio)
+    st.info(
+        f"Voice language: {language}"
+    )
 
-        st.markdown("### Step 2 — Transcribe")
+    st.subheader(
+        "1. Record your voice"
+    )
 
-        if st.button(
-            "📝 Transcribe with Gemini",
-            use_container_width=True,
-        ):
-            if not resolve_gemini_key(settings):
-                st.error(
-                    "Gemini API key is missing. "
-                    "Open Settings → Gemini AI."
-                )
-            else:
+    if hasattr(st, "audio_input"):
+
+        audio = st.audio_input(
+            "🎙️ Record",
+            key="jarvis_audio",
+        )
+
+        if audio:
+
+            st.audio(audio)
+
+            st.subheader(
+                "2. Convert speech to text"
+            )
+
+            if st.button(
+                "📝 Transcribe with Gemini",
+                use_container_width=True,
+            ):
+
                 try:
+
                     with st.spinner(
-                        "JARVIS is converting your speech to text..."
+                        "Transcribing..."
                     ):
-                        transcript = transcribe_audio_with_gemini(
+
+                        transcript = transcribe_audio(
                             audio.getvalue(),
-                            getattr(audio, "type", None) or "audio/wav",
+                            getattr(
+                                audio,
+                                "type",
+                                None,
+                            )
+                            or "audio/wav",
                             settings,
                         )
 
-                    st.session_state.last_transcript = transcript
-                    st.session_state.voice_error = ""
-                    st.success("Voice transcription complete.")
+                    st.session_state.last_transcript = (
+                        transcript
+                    )
+
+                    st.success(
+                        "Transcription complete."
+                    )
 
                 except Exception as exc:
-                    st.session_state.voice_error = str(exc)
-                    st.error(f"Voice input error: {exc}")
 
-    if st.session_state.voice_error:
-        st.error(st.session_state.voice_error)
+                    st.error(
+                        f"Voice input error: {exc}"
+                    )
+
+    else:
+
+        st.error(
+            "Your Streamlit version does not support "
+            "st.audio_input(). Update Streamlit."
+        )
 
     if st.session_state.last_transcript:
-        st.markdown("### Recognized text")
 
-        transcript = st.text_area(
-            "Review and edit before sending",
+        st.subheader(
+            "3. Review recognized text"
+        )
+
+        edited_transcript = st.text_area(
+            "Transcript",
             value=st.session_state.last_transcript,
-            height=140,
-            key="voice_transcript_editor",
+            height=150,
         )
 
-        send_voice = st.button(
+        if st.button(
             "⚡ Send to JARVIS",
+            type="primary",
             use_container_width=True,
-        )
+        ):
 
-        if send_voice:
-            if not transcript.strip():
-                st.warning("There is no recognized text to send.")
-            else:
+            if edited_transcript.strip():
+
                 save_message(
                     st.session_state.current_conversation_id,
                     "user",
-                    transcript.strip(),
+                    edited_transcript.strip(),
                 )
 
-                with st.spinner("JARVIS is thinking..."):
+                with st.spinner(
+                    "JARVIS is thinking..."
+                ):
+
                     try:
+
                         current_messages = load_messages(
                             st.session_state.current_conversation_id
                         )
 
-                        answer = generate_gemini_answer(
+                        answer = generate_answer(
                             settings,
                             current_messages,
                             st.session_state.uploaded_file_context,
@@ -1546,7 +2227,11 @@ elif page == "🎙️ Voice":
                         )
 
                     except Exception as exc:
-                        answer = f"⚠️ {exc}"
+
+                        answer = (
+                            "⚠️ "
+                            + str(exc)
+                        )
 
                 save_message(
                     st.session_state.current_conversation_id,
@@ -1555,37 +2240,33 @@ elif page == "🎙️ Voice":
                 )
 
                 st.session_state.last_transcript = ""
+
                 st.rerun()
 
-    st.divider()
+            else:
 
-    st.markdown("### Voice workflow")
-
-    st.write(
-        "🎙️ Record → 📝 Gemini transcription → ✏️ Review → "
-        "⚡ Send → 🤖 Gemini answer"
-    )
-
-    st.caption(
-        "If microphone recording is unavailable in your browser, "
-        "use the browser's microphone permission settings or update "
-        "to a current Chromium/Edge/Chrome browser."
-    )
+                st.warning(
+                    "No speech was recognized."
+                )
 
 
-# ------------------------------------------------------------
-# FILES PAGE
-# ------------------------------------------------------------
+# ============================================================
+# FILES
+# ============================================================
+
 elif page == "📎 Files":
-    st.title("📎 Files & Visual Analysis")
+
+    st.title(
+        "📎 Files & Visual Analysis"
+    )
 
     st.write(
-        "Upload a supported text, PDF, ZIP, or image file to provide "
-        "additional context to JARVIS."
+        "Upload supported documents, source files, "
+        "ZIP archives, PDFs or images."
     )
 
     uploaded = st.file_uploader(
-        "Upload file",
+        "Upload a file",
         type=[
             "txt",
             "pdf",
@@ -1611,109 +2292,179 @@ elif page == "📎 Files":
     )
 
     if uploaded:
+
         if st.button(
-            "📥 Load into current chat",
+            "📥 Attach to current chat",
             use_container_width=True,
         ):
-            context, image = extract_uploaded_file(uploaded)
 
-            st.session_state.uploaded_file_context = context
-            st.session_state.attached_image = image
-
-            st.success(
-                f"{uploaded.name} is now attached to the current chat."
+            context, image = (
+                extract_uploaded_file(
+                    uploaded
+                )
             )
 
-    if st.session_state.attached_image is not None:
-        st.subheader("Attached image")
+            st.session_state.uploaded_file_context = (
+                context
+            )
+
+            st.session_state.attached_image = (
+                image
+            )
+
+            st.success(
+                f"{uploaded.name} attached."
+            )
+
+    if st.session_state.attached_image:
+
+        st.subheader(
+            "Attached image"
+        )
+
         st.image(
             st.session_state.attached_image,
             use_container_width=True,
         )
 
     if st.session_state.uploaded_file_context:
-        st.subheader("Extracted context")
 
-        preview = st.session_state.uploaded_file_context
+        st.subheader(
+            "Extracted text"
+        )
+
+        preview = (
+            st.session_state.uploaded_file_context
+        )
 
         if len(preview) > 12000:
-            preview = preview[:12000] + "\n\n[Preview truncated]"
+
+            preview = (
+                preview[:12000]
+                + "\n\n[Preview truncated]"
+            )
 
         st.text_area(
-            "Text available to JARVIS",
+            "File context",
             value=preview,
             height=400,
             disabled=True,
         )
 
-        if st.button("🧹 Clear attachment"):
+        if st.button(
+            "🧹 Clear attachment"
+        ):
+
             st.session_state.uploaded_file_context = ""
             st.session_state.attached_image = None
+
             st.rerun()
 
 
-# ------------------------------------------------------------
-# SETTINGS PAGE
-# ------------------------------------------------------------
-elif page == "⚙️ Settings":
-    st.title("⚙️ Settings")
+# ============================================================
+# SETTINGS
+# ============================================================
 
-    settings_tab, voice_tab, ai_tab = st.tabs(
-        ["General", "Voice", "Gemini AI"]
+elif page == "⚙️ Settings":
+
+    st.title(
+        "⚙️ Settings"
     )
 
-    with settings_tab:
+    general_tab, voice_tab, gemini_tab = st.tabs(
+        [
+            "General",
+            "Voice",
+            "Gemini AI",
+        ]
+    )
+
+    with general_tab:
+
         theme = st.selectbox(
             "Theme",
-            ["dark", "light"],
+            [
+                "dark",
+                "light",
+            ],
             index=(
                 0
-                if settings.get("theme", "dark") == "dark"
+                if settings.get(
+                    "theme",
+                    "dark",
+                ) == "dark"
                 else 1
             ),
         )
 
+        languages = [
+            "English",
+            "Urdu",
+            "English + Urdu",
+        ]
+
+        current_language = settings.get(
+            "language",
+            "English",
+        )
+
+        if current_language not in languages:
+
+            current_language = "English"
+
         language = st.selectbox(
             "Response language",
-            ["English", "Urdu", "English + Urdu"],
-            index=[
-                "English",
-                "Urdu",
-                "English + Urdu",
-            ].index(settings.get("language", "English")),
+            languages,
+            index=languages.index(
+                current_language
+            ),
         )
 
         custom_prompt = st.text_area(
             "Custom JARVIS instruction",
-            value=settings.get("custom_sys_prompt", ""),
-            height=160,
-            placeholder=(
-                "Example: Explain technical subjects step-by-step."
+            value=settings.get(
+                "custom_sys_prompt",
+                "",
             ),
+            height=160,
         )
 
     with voice_tab:
+
         voice_enabled = st.checkbox(
             "Enable voice features",
-            value=bool(settings.get("voice_enabled", 1)),
+            value=bool(
+                settings.get(
+                    "voice_enabled",
+                    1,
+                )
+            ),
         )
 
         auto_send_voice = st.checkbox(
-            "Auto-send transcribed voice commands",
-            value=bool(settings.get("auto_send_voice", 0)),
+            "Auto-send voice commands",
+            value=bool(
+                settings.get(
+                    "auto_send_voice",
+                    0,
+                )
+            ),
             help=(
-                "The current safe default is OFF so you can review "
-                "the transcript before it is sent."
+                "Leave disabled if you want to "
+                "review transcripts before sending."
             ),
         )
 
         st.info(
-            "Voice input uses your browser microphone through "
-            "Streamlit's audio recorder and Gemini for transcription."
+            "Voice recording uses Streamlit's microphone "
+            "input and Gemini for transcription."
         )
 
-    with ai_tab:
-        st.subheader("Gemini AI")
+    with gemini_tab:
+
+        st.subheader(
+            "Gemini AI Configuration"
+        )
 
         model = st.text_input(
             "Gemini model",
@@ -1721,60 +2472,76 @@ elif page == "⚙️ Settings":
                 "default_model",
                 DEFAULT_MODEL,
             ),
-            help=(
-                "Use a Gemini model currently available to your API key."
-            ),
         )
 
         gemini_key = st.text_input(
-            "Gemini API key",
-            value=settings.get("api_key_gemini", ""),
+            "Gemini API Key",
+            value=settings.get(
+                "api_key_gemini",
+                "",
+            ),
             type="password",
-            help="Your key is stored in the local SQLite settings database.",
         )
 
         st.caption(
-            "For production deployment, prefer a server-side secret/"
-            "environment variable instead of storing a user key."
+            "For production deployments, use a server-side "
+            "secret/environment variable when possible."
         )
 
         if st.button(
-            "🧪 Test Gemini connection",
+            "🧪 Test Gemini Connection",
             use_container_width=True,
         ):
+
             if not gemini_key.strip():
-                st.error("Enter a Gemini API key first.")
+
+                st.error(
+                    "Enter a Gemini API key first."
+                )
+
             else:
-                test_settings = dict(settings)
-                test_settings["api_key_gemini"] = gemini_key
-                test_settings["default_model"] = model
 
                 try:
+
                     result = gemini_request(
                         gemini_key.strip(),
-                        model.strip(),
-                        [{
-                            "role": "user",
-                            "parts": [{
-                                "text": (
-                                    "Reply with exactly: "
-                                    "GEMINI CONNECTION OK"
-                                )
-                            }],
-                        }],
+                        model.strip()
+                        or DEFAULT_MODEL,
+                        [
+                            {
+                                "role": "user",
+                                "parts": [
+                                    {
+                                        "text":
+                                        "Reply exactly with: "
+                                        "GEMINI CONNECTION OK"
+                                    }
+                                ],
+                            }
+                        ],
                         temperature=0.0,
                     )
 
-                    st.success(result)
+                    st.success(
+                        result
+                    )
 
                 except Exception as exc:
-                    st.error(str(exc))
 
-        st.subheader("Optional Groq fallback")
+                    st.error(
+                        str(exc)
+                    )
+
+        st.subheader(
+            "Optional Groq API Key"
+        )
 
         groq_key = st.text_input(
-            "Groq API key",
-            value=settings.get("api_key_groq", ""),
+            "Groq API Key",
+            value=settings.get(
+                "api_key_groq",
+                "",
+            ),
             type="password",
         )
 
@@ -1783,10 +2550,12 @@ elif page == "⚙️ Settings":
         type="primary",
         use_container_width=True,
     ):
+
         update_user_settings(
-            current_user["id"],
+            user["id"],
             theme,
-            model.strip() or DEFAULT_MODEL,
+            model.strip()
+            or DEFAULT_MODEL,
             gemini_key.strip(),
             groq_key.strip(),
             custom_prompt,
@@ -1795,87 +2564,179 @@ elif page == "⚙️ Settings":
             auto_send_voice,
         )
 
-        st.session_state.settings = get_user_settings(
-            current_user["id"]
+        st.session_state.settings = (
+            get_user_settings(
+                user["id"]
+            )
         )
 
-        st.success("Settings saved successfully.")
+        st.success(
+            "Settings saved successfully."
+        )
+
         st.rerun()
 
 
-# ------------------------------------------------------------
-# DIAGNOSTICS PAGE
-# ------------------------------------------------------------
-elif page == "📊 Diagnostics":
-    st.title("📊 System Diagnostics")
+# ============================================================
+# DIAGNOSTICS
+# ============================================================
 
-    gemini_key_present = bool(resolve_gemini_key(settings))
+elif page == "📊 Diagnostics":
+
+    st.title(
+        "📊 System Diagnostics"
+    )
 
     checks = [
-        ("Application", True),
-        ("Database", os.path.exists(DB_FILE)),
-        ("Authentication", st.session_state.user is not None),
-        ("Gemini API Key", gemini_key_present),
-        ("Voice Recorder", hasattr(st, "audio_input")),
-        ("PDF Export", FPDF is not None),
+        (
+            "Application",
+            True,
+        ),
+        (
+            "Database",
+            os.path.exists(
+                DB_FILE
+            ),
+        ),
+        (
+            "Authentication",
+            st.session_state.user is not None,
+        ),
+        (
+            "Gemini API Key",
+            bool(
+                get_gemini_api_key(
+                    settings
+                )
+            ),
+        ),
+        (
+            "Voice Recorder",
+            hasattr(
+                st,
+                "audio_input",
+            ),
+        ),
+        (
+            "PDF Export",
+            FPDF is not None,
+        ),
     ]
 
     for name, status in checks:
+
         if status:
-            st.success(f"{name}: READY")
+
+            st.success(
+                f"{name}: READY"
+            )
+
         else:
-            st.warning(f"{name}: NOT READY")
+
+            st.warning(
+                f"{name}: NOT READY"
+            )
 
     st.divider()
 
-    st.subheader("Current configuration")
+    st.subheader(
+        "Configuration"
+    )
 
-    st.json({
-        "user": current_user["username"],
-        "theme": settings.get("theme"),
-        "language": settings.get("language"),
-        "gemini_model": settings.get(
-            "default_model",
-            DEFAULT_MODEL,
-        ),
-        "gemini_key_configured": gemini_key_present,
-        "voice_enabled": bool(settings.get("voice_enabled", 1)),
-        "auto_send_voice": bool(
-            settings.get("auto_send_voice", 0)
-        ),
-        "database": DB_FILE,
-        "current_conversation": (
-            st.session_state.current_conversation_id
-        ),
-    })
+    st.json(
+        {
+            "user":
+                user["username"],
+
+            "theme":
+                settings.get(
+                    "theme"
+                ),
+
+            "language":
+                settings.get(
+                    "language"
+                ),
+
+            "gemini_model":
+                settings.get(
+                    "default_model"
+                ),
+
+            "gemini_configured":
+                bool(
+                    get_gemini_api_key(
+                        settings
+                    )
+                ),
+
+            "voice_enabled":
+                bool(
+                    settings.get(
+                        "voice_enabled",
+                        1,
+                    )
+                ),
+
+            "auto_send_voice":
+                bool(
+                    settings.get(
+                        "auto_send_voice",
+                        0,
+                    )
+                ),
+
+            "database":
+                DB_FILE,
+
+            "conversation":
+                st.session_state.current_conversation_id,
+        }
+    )
 
 
-# ------------------------------------------------------------
-# GLOBAL CHAT EXPORT
-# ------------------------------------------------------------
+# ============================================================
+# EXPORT CURRENT CHAT
+# ============================================================
+
 if (
     st.session_state.current_conversation_id
-    and page in ("💬 Chat", "🎙️ Voice")
+    and page in (
+        "💬 Chat",
+        "🎙️ Voice",
+    )
 ):
+
     with st.sidebar:
+
         st.divider()
-        st.subheader("Export current chat")
+
+        st.subheader(
+            "Export Chat"
+        )
 
         current_messages = load_messages(
             st.session_state.current_conversation_id
         )
 
         if current_messages:
+
             st.download_button(
                 "⬇️ TXT",
-                data=export_to_txt(current_messages),
+                data=export_to_txt(
+                    current_messages
+                ),
                 file_name="fenix_chat.txt",
                 mime="text/plain",
                 use_container_width=True,
             )
 
-            pdf_data = export_to_pdf(current_messages)
+            pdf_data = export_to_pdf(
+                current_messages
+            )
+
             if pdf_data:
+
                 st.download_button(
                     "⬇️ PDF",
                     data=pdf_data,
@@ -1886,8 +2747,11 @@ if (
 
             st.download_button(
                 "⬇️ ZIP",
-                data=export_to_zip(current_messages),
+                data=export_to_zip(
+                    current_messages
+                ),
                 file_name="fenix_chat.zip",
                 mime="application/zip",
                 use_container_width=True,
             )
+```
