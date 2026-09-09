@@ -826,6 +826,12 @@ def export_to_txt(messages):
 
 
 def export_to_pdf(messages):
+    """
+    Robust PDF exporter.
+
+    Prevents fpdf2 failures caused by very long unbroken strings such as
+    URLs, code, JSON, hashes, or other whitespace-free text.
+    """
     if FPDF is None:
         return None
 
@@ -834,37 +840,66 @@ def export_to_pdf(messages):
     pdf.add_page()
 
     pdf.set_font("Arial", size=14)
-    pdf.cell(
-        0,
-        10,
-        "Fenix AI - Chat Transcript",
-        ln=True,
-        align="C",
-    )
+    pdf.cell(0, 10, "Fenix AI - Chat Transcript", ln=True, align="C")
     pdf.ln(6)
 
-    pdf.set_font("Arial", size=9)
+    try:
+        from fpdf.enums import WrapMode
+        char_wrap = WrapMode.CHAR
+    except Exception:
+        char_wrap = "CHAR"
 
     for message in messages:
-        role = message["role"].upper()
-        timestamp = message["timestamp"]
+        role = str(message.get("role", "")).upper()
+        timestamp = str(message.get("timestamp", ""))
+        safe_header = f"[{timestamp}] {role}"
 
-        header = f"[{timestamp}] {role}"
-        safe_header = header.encode(
-            "latin-1",
-            errors="replace"
+        raw_content = str(message.get("content", ""))
+        raw_content = re.sub(
+            r"[\\x00-\\x08\\x0b\\x0c\\x0e-\\x1f\\x7f]",
+            " ",
+            raw_content,
+        )
+        raw_content = raw_content.replace("\r\n", "\n").replace("\r", "\n")
+
+        # Hard-break extremely long whitespace-free tokens.
+        raw_content = re.sub(r"(\\S{90})(?=\\S)", r"\\1\n", raw_content)
+
+        safe_content = raw_content.encode(
+            "latin-1", errors="replace"
         ).decode("latin-1")
 
-        safe_content = message["content"].encode(
-            "latin-1",
-            errors="replace"
-        ).decode("latin-1")
-
-        pdf.multi_cell(0, 6, safe_header)
-        pdf.set_font("Arial", size=10)
-        pdf.multi_cell(0, 6, safe_content)
-        pdf.ln(3)
         pdf.set_font("Arial", size=9)
+        pdf.multi_cell(0, 6, safe_header, wrapmode=char_wrap)
+
+        pdf.set_font("Arial", size=10)
+        try:
+            pdf.multi_cell(
+                0,
+                6,
+                safe_content or "(empty message)",
+                wrapmode=char_wrap,
+            )
+        except Exception:
+            # Absolute fallback for unusual fpdf2 text/layout cases.
+            chunks = []
+            for line in safe_content.split("\n"):
+                if not line:
+                    chunks.append("")
+                else:
+                    chunks.extend(
+                        line[i:i + 60]
+                        for i in range(0, len(line), 60)
+                    )
+
+            pdf.multi_cell(
+                0,
+                6,
+                "\n".join(chunks) or "(empty message)",
+                wrapmode=char_wrap,
+            )
+
+        pdf.ln(3)
 
     output = pdf.output(dest="S")
 
@@ -872,7 +907,6 @@ def export_to_pdf(messages):
         return output.encode("latin-1")
 
     return bytes(output)
-
 
 def export_to_zip(messages):
     buffer = io.BytesIO()
